@@ -30,7 +30,7 @@ export default function Logs() {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(false);
   const [loggingEnabled, setLoggingEnabled] = useState(true);
-  const [filters, setFilters] = useState({ page: 1, limit: 30, provider: '' });
+  const [filters, setFilters] = useState({ page: 1, limit: 30, provider: '', search: '', status: '' });
   const [detailRecord, setDetailRecord] = useState(null);
 
   const load = useCallback(async (params) => {
@@ -190,13 +190,31 @@ export default function Logs() {
       <div className="filter-bar">
         <SearchOutlined style={{ color: 'var(--text-tertiary)' }} />
         <Input
-          placeholder="Filter by provider..."
-          value={filters.provider}
-          onChange={(e) => setFilters({ ...filters, provider: e.target.value })}
-          style={{ width: 200, border: 'none', boxShadow: 'none' }}
+          placeholder="Search provider, model, format..."
+          value={filters.search}
+          onChange={(e) => setFilters({ ...filters, search: e.target.value })}
+          style={{ flex: 1, maxWidth: 300, border: 'none', boxShadow: 'none' }}
           allowClear
           onPressEnter={() => load({ page: 1 })}
         />
+        <div style={{ width: 1, height: 20, background: 'var(--border-color)' }} />
+        <select
+          value={filters.status}
+          onChange={(e) => { setFilters({ ...filters, status: e.target.value }); load({ page: 1, status: e.target.value }); }}
+          style={{
+            padding: '4px 8px',
+            borderRadius: 'var(--radius-sm)',
+            border: '1px solid var(--border-color)',
+            background: 'transparent',
+            color: 'var(--text-secondary)',
+            fontSize: 13,
+            cursor: 'pointer',
+          }}
+        >
+          <option value="">All Status</option>
+          <option value="success">Success</option>
+          <option value="error">Errors</option>
+        </select>
         <Button type="primary" size="small" onClick={() => load({ page: 1 })}>
           Apply
         </Button>
