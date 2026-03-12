@@ -13,6 +13,9 @@ import {
   RobotOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
+  SearchOutlined,
+  FilterOutlined,
+  PoweroffOutlined,
 } from '@ant-design/icons';
 import { api } from '../api';
 
@@ -48,6 +51,8 @@ export default function Providers() {
   const [form] = Form.useForm();
   const [formType, setFormType] = useState('cli');
   const [testResults, setTestResults] = useState({});
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterType, setFilterType] = useState('');
 
   const load = async () => {
     setLoading(true);
@@ -124,6 +129,31 @@ export default function Providers() {
 
   const showApiFields = formType !== 'cli';
 
+  const handleBulkEnable = async () => {
+    const disabled = providers.filter(p => !p.enabled);
+    if (disabled.length === 0) return;
+    await api.bulkToggleProviders(disabled.map(p => p.id), true);
+    message.success(`Enabled ${disabled.length} providers`);
+    load();
+  };
+
+  const handleBulkDisable = async () => {
+    const enabled = providers.filter(p => p.enabled && !p.is_default);
+    if (enabled.length === 0) return;
+    await api.bulkToggleProviders(enabled.map(p => p.id), false);
+    message.success(`Disabled ${enabled.length} providers`);
+    load();
+  };
+
+  const filteredProviders = providers.filter(p => {
+    const matchesSearch = !searchQuery ||
+      p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      p.type.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (p.default_model || '').toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesType = !filterType || p.type === filterType;
+    return matchesSearch && matchesType;
+  });
+
   if (loading && providers.length === 0) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 400 }}>
@@ -138,16 +168,54 @@ export default function Providers() {
         <div>
           <h2>Providers</h2>
           <div className="page-header-subtitle">
-            Manage your AI provider connections
+            Manage your AI provider connections ({providers.filter(p => p.enabled).length} active / {providers.length} total)
           </div>
         </div>
-        <Button type="primary" icon={<PlusOutlined />} onClick={openAdd}>
-          Add Provider
-        </Button>
+        <Space>
+          <Tooltip title="Enable all disabled">
+            <Button icon={<PoweroffOutlined />} size="small" onClick={handleBulkEnable}>
+              Enable All
+            </Button>
+          </Tooltip>
+          <Button type="primary" icon={<PlusOutlined />} onClick={openAdd}>
+            Add Provider
+          </Button>
+        </Space>
+      </div>
+
+      {/* Search and Filter */}
+      <div className="filter-bar" style={{ marginBottom: 20 }}>
+        <SearchOutlined style={{ color: 'var(--text-tertiary)' }} />
+        <Input
+          placeholder="Search providers..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          style={{ flex: 1, maxWidth: 300, border: 'none', boxShadow: 'none' }}
+          allowClear
+        />
+        <div style={{ width: 1, height: 20, background: 'var(--border-color)' }} />
+        <select
+          value={filterType}
+          onChange={(e) => setFilterType(e.target.value)}
+          style={{
+            padding: '4px 8px',
+            borderRadius: 'var(--radius-sm)',
+            border: '1px solid var(--border-color)',
+            background: 'transparent',
+            color: 'var(--text-secondary)',
+            fontSize: 13,
+            cursor: 'pointer',
+          }}
+        >
+          <option value="">All Types</option>
+          {providerTypes.map(t => (
+            <option key={t.value} value={t.value}>{t.label}</option>
+          ))}
+        </select>
       </div>
 
       <div className="grid grid-3">
-        {providers.map((p) => (
+        {filteredProviders.map((p) => (
           <div key={p.id} className={`provider-card ${p.is_default ? 'is-default' : ''}`}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>

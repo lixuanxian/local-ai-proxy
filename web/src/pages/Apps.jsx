@@ -7,6 +7,8 @@ import {
   LinkOutlined,
   AppstoreOutlined,
   GlobalOutlined,
+  ArrowUpOutlined,
+  ArrowDownOutlined,
 } from '@ant-design/icons';
 import { api } from '../api';
 
@@ -58,6 +60,15 @@ export default function Apps() {
     await api.deleteApp(id);
     message.success('App deleted');
     load();
+  };
+
+  const handleMove = async (index, direction) => {
+    const newApps = [...apps];
+    const targetIndex = index + direction;
+    if (targetIndex < 0 || targetIndex >= newApps.length) return;
+    [newApps[index], newApps[targetIndex]] = [newApps[targetIndex], newApps[index]];
+    setApps(newApps);
+    await api.reorderApps(newApps.map(a => a.id));
   };
 
   if (loading && apps.length === 0) {
@@ -145,6 +156,36 @@ export default function Apps() {
                 display: 'flex',
                 borderTop: '1px solid var(--border-color-light)',
               }}>
+                {i > 0 && (
+                  <>
+                    <Tooltip title="Move up">
+                      <div
+                        onClick={() => handleMove(i, -1)}
+                        style={{ padding: '10px', textAlign: 'center', cursor: 'pointer', color: 'var(--text-tertiary)', transition: 'all var(--transition-fast)', fontSize: 12 }}
+                        onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-primary)'; e.currentTarget.style.background = 'var(--bg-hover)'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-tertiary)'; e.currentTarget.style.background = 'transparent'; }}
+                      >
+                        <ArrowUpOutlined />
+                      </div>
+                    </Tooltip>
+                    <div style={{ width: 1, background: 'var(--border-color-light)' }} />
+                  </>
+                )}
+                {i < apps.length - 1 && (
+                  <>
+                    <Tooltip title="Move down">
+                      <div
+                        onClick={() => handleMove(i, 1)}
+                        style={{ padding: '10px', textAlign: 'center', cursor: 'pointer', color: 'var(--text-tertiary)', transition: 'all var(--transition-fast)', fontSize: 12 }}
+                        onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-primary)'; e.currentTarget.style.background = 'var(--bg-hover)'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-tertiary)'; e.currentTarget.style.background = 'transparent'; }}
+                      >
+                        <ArrowDownOutlined />
+                      </div>
+                    </Tooltip>
+                    <div style={{ width: 1, background: 'var(--border-color-light)' }} />
+                  </>
+                )}
                 <Tooltip title="Edit">
                   <div
                     onClick={() => openEdit(app)}
