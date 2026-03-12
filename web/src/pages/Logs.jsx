@@ -9,6 +9,8 @@ import {
   CalendarOutlined,
   FileTextOutlined,
   SearchOutlined,
+  DownloadOutlined,
+  CopyOutlined,
 } from '@ant-design/icons';
 import { api } from '../api';
 
@@ -57,6 +59,33 @@ export default function Logs() {
     await api.clearLogs();
     message.success('Logs cleared');
     load();
+  };
+
+  const exportLogs = () => {
+    if (!logs.rows || logs.rows.length === 0) {
+      message.warning('No logs to export');
+      return;
+    }
+    const csv = [
+      'Timestamp,Format,Provider,Model,Status,Latency(ms),Input Tokens,Output Tokens',
+      ...logs.rows.map(r =>
+        `"${r.timestamp}","${r.api_format || ''}","${r.provider_id || ''}","${r.model || ''}",${r.status_code || ''},${r.latency_ms || 0},${r.input_tokens || 0},${r.output_tokens || 0}`
+      ),
+    ].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `ai-proxy-logs-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    message.success('Logs exported');
+  };
+
+  const copyLogDetail = () => {
+    if (!detailRecord) return;
+    const text = JSON.stringify(detailRecord, null, 2);
+    navigator.clipboard.writeText(text).then(() => message.success('Copied to clipboard'));
   };
 
   const columns = [
@@ -136,6 +165,7 @@ export default function Logs() {
           <Popconfirm title="Clear all logs?" onConfirm={clearAll}>
             <Button danger icon={<DeleteOutlined />} size="small">Clear</Button>
           </Popconfirm>
+          <Button icon={<DownloadOutlined />} size="small" onClick={exportLogs}>Export</Button>
           <Button icon={<ReloadOutlined />} size="small" onClick={() => load()}>Refresh</Button>
         </Space>
       </div>
@@ -196,7 +226,11 @@ export default function Logs() {
         title="Request Detail"
         open={!!detailRecord}
         onCancel={() => setDetailRecord(null)}
-        footer={null}
+        footer={
+          <Button icon={<CopyOutlined />} onClick={copyLogDetail}>
+            Copy as JSON
+          </Button>
+        }
         width={680}
       >
         {detailRecord && (
