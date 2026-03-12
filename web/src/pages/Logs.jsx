@@ -13,6 +13,7 @@ import {
   CopyOutlined,
 } from '@ant-design/icons';
 import { api } from '../api';
+import { StatCardSkeleton, TableSkeleton } from '../components/Skeleton';
 
 function timeAgo(timestamp) {
   if (!timestamp) return '-';
@@ -230,6 +231,15 @@ export default function Logs() {
           onClick: () => setDetailRecord(record),
           style: { cursor: 'pointer' },
         })}
+        locale={{
+          emptyText: (
+            <div style={{ padding: '40px 0', textAlign: 'center' }}>
+              <FileTextOutlined style={{ fontSize: 36, color: 'var(--text-tertiary)', opacity: 0.4, marginBottom: 12, display: 'block' }} />
+              <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 4 }}>No logs yet</div>
+              <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>API requests will appear here once logging is enabled</div>
+            </div>
+          ),
+        }}
         pagination={{
           current: logs.page,
           total: logs.total,

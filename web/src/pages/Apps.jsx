@@ -11,6 +11,7 @@ import {
   ArrowDownOutlined,
 } from '@ant-design/icons';
 import { api } from '../api';
+import { CardSkeleton } from '../components/Skeleton';
 
 export default function Apps() {
   const [apps, setApps] = useState([]);
@@ -73,8 +74,12 @@ export default function Apps() {
 
   if (loading && apps.length === 0) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 400 }}>
-        <Spin size="large" />
+      <div className="animate-fade-in">
+        <div style={{ marginBottom: 28 }}>
+          <div className="skeleton" style={{ width: 120, height: 30, marginBottom: 8, borderRadius: 'var(--radius-sm)' }} />
+          <div className="skeleton" style={{ width: 260, height: 16, borderRadius: 'var(--radius-sm)' }} />
+        </div>
+        <CardSkeleton count={4} />
       </div>
     );
   }
@@ -97,6 +102,9 @@ export default function Apps() {
         <div className="empty-state">
           <div className="empty-state-icon"><AppstoreOutlined /></div>
           <div className="empty-state-text">No apps configured yet</div>
+          <div style={{ fontSize: 13, color: 'var(--text-tertiary)', marginBottom: 16 }}>
+            Add quick-access links to your favorite tools and services
+          </div>
           <Button type="primary" icon={<PlusOutlined />} onClick={openAdd}>
             Add Your First App
           </Button>

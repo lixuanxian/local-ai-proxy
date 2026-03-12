@@ -61,9 +61,10 @@ export default function App() {
     document.documentElement.setAttribute('data-theme', mode);
   }, [darkMode]);
 
-  // Close mobile menu on navigation
+  // Close mobile menu on navigation + scroll to top
   useEffect(() => {
     setMobileOpen(false);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }, [location.pathname]);
 
   // Keyboard shortcuts

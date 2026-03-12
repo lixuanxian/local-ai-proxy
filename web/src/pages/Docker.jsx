@@ -255,8 +255,13 @@ export default function Docker() {
 
   if (loading && configs.length === 0 && !status) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 400 }}>
-        <Spin size="large" />
+      <div className="animate-fade-in">
+        <div style={{ marginBottom: 28 }}>
+          <div className="skeleton" style={{ width: 180, height: 30, marginBottom: 8, borderRadius: 'var(--radius-sm)' }} />
+          <div className="skeleton" style={{ width: 280, height: 16, borderRadius: 'var(--radius-sm)' }} />
+        </div>
+        <div className="skeleton" style={{ width: '100%', height: 70, borderRadius: 'var(--radius-md)', marginBottom: 20 }} />
+        <div className="skeleton" style={{ width: '100%', height: 200, borderRadius: 'var(--radius-md)' }} />
       </div>
     );
   }
@@ -313,12 +318,29 @@ export default function Docker() {
         <div className="empty-state">
           <div className="empty-state-icon"><CloudServerOutlined /></div>
           <div className="empty-state-text">No Docker configurations</div>
+          <div style={{ fontSize: 13, color: 'var(--text-tertiary)', marginBottom: 16 }}>
+            Create sandbox environments for secure code execution
+          </div>
           <Button type="primary" icon={<PlusOutlined />} onClick={openAdd}>
             Add Your First Config
           </Button>
         </div>
       ) : (
-        <Table dataSource={configs} columns={columns} rowKey="id" loading={loading} pagination={false} />
+        <Table
+          dataSource={configs}
+          columns={columns}
+          rowKey="id"
+          loading={loading}
+          pagination={false}
+          locale={{
+            emptyText: (
+              <div style={{ padding: '40px 0', textAlign: 'center' }}>
+                <CloudServerOutlined style={{ fontSize: 36, color: 'var(--text-tertiary)', opacity: 0.4, marginBottom: 12, display: 'block' }} />
+                <div style={{ fontSize: 14, color: 'var(--text-secondary)' }}>No configurations found</div>
+              </div>
+            ),
+          }}
+        />
       )}
 
       {/* Config Modal */}
