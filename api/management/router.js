@@ -1,6 +1,6 @@
 const { Router } = require("express");
 const config = require("../../lib/config");
-const { queryLogs, getStats, clearLogs } = require("../../lib/logger");
+const { queryLogs, getStats, getHourlyStats, getProviderStats, getModelStats, clearLogs } = require("../../lib/logger");
 const docker = require("../../lib/docker");
 
 module.exports = function createManagementRouter(providerRegistry) {
@@ -8,11 +8,14 @@ module.exports = function createManagementRouter(providerRegistry) {
 
   // ---- System Info ----
   router.get("/api/info", (req, res) => {
+    const settings = config.getAllSettings();
     res.json({
       name: "local-ai-proxy",
       version: "1.0.0",
       providers: providerRegistry.listNames(),
       default_provider: providerRegistry.getDefault(),
+      port: settings.port || process.env.PORT || 3199,
+      uptime: Math.floor(process.uptime()),
     });
   });
 
@@ -80,6 +83,14 @@ module.exports = function createManagementRouter(providerRegistry) {
     res.json({ ok: true, default_provider: req.params.id });
   });
 
+  router.post("/api/providers/bulk/toggle", (req, res) => {
+    const { ids, enabled } = req.body;
+    if (!Array.isArray(ids)) return res.status(400).json({ error: "ids must be an array" });
+    if (typeof enabled !== 'boolean') return res.status(400).json({ error: "enabled must be a boolean" });
+    config.bulkToggleProviders(ids, enabled);
+    res.json({ ok: true, updated: ids.length });
+  });
+
   router.post("/api/providers/:id/test", async (req, res) => {
     const providerConfig = config.getProvider(req.params.id);
     if (!providerConfig) return res.status(404).json({ error: "Provider not found" });
@@ -101,16 +112,28 @@ module.exports = function createManagementRouter(providerRegistry) {
 
   // ---- Logs ----
   router.get("/api/logs", (req, res) => {
-    const { page, limit, provider, since, until } = req.query;
+    const { page, limit, provider, model, search, status, since, until } = req.query;
     res.json(queryLogs({
       page: parseInt(page) || 1,
       limit: parseInt(limit) || 50,
-      provider, since, until,
+      provider, model, search, status, since, until,
     }));
   });
 
   router.get("/api/logs/stats", (req, res) => {
     res.json(getStats());
+  });
+
+  router.get("/api/logs/stats/hourly", (req, res) => {
+    res.json(getHourlyStats());
+  });
+
+  router.get("/api/logs/stats/providers", (req, res) => {
+    res.json(getProviderStats());
+  });
+
+  router.get("/api/logs/stats/models", (req, res) => {
+    res.json(getModelStats());
   });
 
   router.delete("/api/logs", (req, res) => {

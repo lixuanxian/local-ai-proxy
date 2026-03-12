@@ -25,13 +25,19 @@ export const api = {
   deleteProvider: (id) => request(`/api/providers/${id}`, { method: 'DELETE' }),
   setDefaultProvider: (id) => request(`/api/providers/${id}/default`, { method: 'PUT' }),
   testProvider: (id) => request(`/api/providers/${id}/test`, { method: 'POST' }),
+  bulkToggleProviders: (ids, enabled) => request('/api/providers/bulk/toggle', { method: 'POST', body: { ids, enabled } }),
 
   // Logs
   getLogs: (params) => {
-    const qs = new URLSearchParams(params).toString();
+    const qs = new URLSearchParams(
+      Object.fromEntries(Object.entries(params).filter(([, v]) => v !== '' && v !== undefined && v !== null))
+    ).toString();
     return request(`/api/logs?${qs}`);
   },
   getLogStats: () => request('/api/logs/stats'),
+  getHourlyStats: () => request('/api/logs/stats/hourly'),
+  getProviderStats: () => request('/api/logs/stats/providers'),
+  getModelStats: () => request('/api/logs/stats/models'),
   clearLogs: () => request('/api/logs', { method: 'DELETE' }),
 
   // Apps
@@ -48,4 +54,13 @@ export const api = {
   deleteDockerConfig: (id) => request(`/api/docker/configs/${id}`, { method: 'DELETE' }),
   getDockerStatus: () => request('/api/docker/status'),
   testDocker: () => request('/api/docker/test', { method: 'POST' }),
+
+  // Docker Sandboxes
+  getSandboxes: () => request('/api/docker/sandboxes'),
+  startSandbox: (configId) => request(`/api/docker/sandboxes/${configId}/start`, { method: 'POST' }),
+  stopSandbox: (configId) => request(`/api/docker/sandboxes/${configId}/stop`, { method: 'POST' }),
+  getSandboxStatus: (configId) => request(`/api/docker/sandboxes/${configId}/status`),
+  execInSandbox: (configId, command) => request(`/api/docker/sandboxes/${configId}/exec`, { method: 'POST', body: { command } }),
+  getSandboxLogs: (configId, tail) => request(`/api/docker/sandboxes/${configId}/logs?tail=${tail || 100}`),
+  pullImage: (configId) => request(`/api/docker/configs/${configId}/pull`, { method: 'POST' }),
 };
