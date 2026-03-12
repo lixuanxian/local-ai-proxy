@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Table, Button, Modal, Form, Input, InputNumber, Switch, Tag, Space, message, Popconfirm, Spin, Tooltip } from 'antd';
+import { Table, Button, Modal, Form, Input, InputNumber, Switch, Tag, Space, message, Popconfirm, Spin, Tooltip, Tabs } from 'antd';
 import {
   PlusOutlined,
   EditOutlined,
@@ -8,19 +8,30 @@ import {
   CloseCircleOutlined,
   CloudServerOutlined,
   PlayCircleOutlined,
+  PauseCircleOutlined,
   CodeOutlined,
   ClockCircleOutlined,
   HddOutlined,
+  CaretRightOutlined,
+  DownloadOutlined,
+  FileTextOutlined,
+  SendOutlined,
 } from '@ant-design/icons';
 import { api } from '../api';
 
 export default function Docker() {
   const [configs, setConfigs] = useState([]);
   const [status, setStatus] = useState(null);
+  const [sandboxes, setSandboxes] = useState([]);
   const [loading, setLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form] = Form.useForm();
+  const [execModal, setExecModal] = useState(null);
+  const [execCommand, setExecCommand] = useState('');
+  const [execOutput, setExecOutput] = useState('');
+  const [execLoading, setExecLoading] = useState(false);
+  const [sandboxLogs, setSandboxLogs] = useState('');
 
   const load = async () => {
     setLoading(true);
@@ -28,6 +39,15 @@ export default function Docker() {
       const [c, s] = await Promise.all([api.getDockerConfigs(), api.getDockerStatus()]);
       setConfigs(c);
       setStatus(s);
+      // Load sandbox statuses
+      const statuses = {};
+      for (const cfg of c) {
+        try {
+          const st = await api.getSandboxStatus(cfg.id);
+          statuses[cfg.id] = st;
+        } catch { /* ignore */ }
+      }
+      setSandboxes(statuses);
     } catch { message.error('Failed to load Docker info'); }
     setLoading(false);
   };
@@ -81,6 +101,77 @@ export default function Docker() {
     }
   };
 
+  const handleStartSandbox = async (configId) => {
+    message.loading({ content: 'Starting sandbox...', key: 'sandbox' });
+    try {
+      const result = await api.startSandbox(configId);
+      if (result.ok) {
+        message.success({ content: 'Sandbox started', key: 'sandbox' });
+      } else {
+        message.error({ content: `Failed: ${result.error}`, key: 'sandbox', duration: 5 });
+      }
+    } catch {
+      message.error({ content: 'Failed to start sandbox', key: 'sandbox' });
+    }
+    load();
+  };
+
+  const handleStopSandbox = async (configId) => {
+    message.loading({ content: 'Stopping sandbox...', key: 'sandbox' });
+    try {
+      await api.stopSandbox(configId);
+      message.success({ content: 'Sandbox stopped', key: 'sandbox' });
+    } catch {
+      message.error({ content: 'Failed to stop sandbox', key: 'sandbox' });
+    }
+    load();
+  };
+
+  const handlePullImage = async (configId) => {
+    message.loading({ content: 'Pulling image...', key: 'pull' });
+    try {
+      const result = await api.pullImage(configId);
+      if (result.ok) {
+        message.success({ content: 'Image pulled', key: 'pull' });
+      } else {
+        message.error({ content: `Failed: ${result.error}`, key: 'pull', duration: 5 });
+      }
+    } catch {
+      message.error({ content: 'Failed to pull image', key: 'pull' });
+    }
+  };
+
+  const openExecModal = async (configId) => {
+    setExecModal(configId);
+    setExecCommand('');
+    setExecOutput('');
+    setSandboxLogs('');
+    // Load logs
+    try {
+      const result = await api.getSandboxLogs(configId, 50);
+      setSandboxLogs(result.logs || '');
+    } catch { /* ignore */ }
+  };
+
+  const handleExec = async () => {
+    if (!execCommand.trim()) return;
+    setExecLoading(true);
+    try {
+      const result = await api.execInSandbox(execModal, execCommand);
+      setExecOutput(
+        `$ ${execCommand}\n` +
+        (result.stdout || '') +
+        (result.stderr ? `\n[stderr] ${result.stderr}` : '') +
+        `\n[exit code: ${result.exitCode}]\n\n` +
+        execOutput
+      );
+      setExecCommand('');
+    } catch (err) {
+      setExecOutput(`Error: ${err.message}\n\n` + execOutput);
+    }
+    setExecLoading(false);
+  };
+
   const columns = [
     {
       title: 'Name', dataIndex: 'name', key: 'name',
@@ -112,28 +203,53 @@ export default function Docker() {
       ),
     },
     {
-      title: 'Status', dataIndex: 'enabled', key: 'enabled',
-      render: (v) => (
-        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <span className={`status-dot ${v ? 'online' : 'offline'}`} />
-          {v ? 'Enabled' : 'Disabled'}
-        </span>
-      ),
+      title: 'Status', key: 'status',
+      render: (_, r) => {
+        const isRunning = sandboxes[r.id]?.running;
+        return (
+          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span className={`status-dot ${r.enabled ? 'online' : 'offline'} ${isRunning ? 'pulse' : ''}`} />
+            {isRunning ? 'Running' : r.enabled ? 'Enabled' : 'Disabled'}
+          </span>
+        );
+      },
     },
     {
-      title: 'Actions', key: 'actions', width: 120,
-      render: (_, record) => (
-        <Space size={4}>
-          <Tooltip title="Edit">
-            <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(record)} />
-          </Tooltip>
-          <Popconfirm title="Delete this config?" onConfirm={() => handleDelete(record.id)}>
-            <Tooltip title="Delete">
-              <Button size="small" danger icon={<DeleteOutlined />} />
+      title: 'Actions', key: 'actions', width: 200,
+      render: (_, record) => {
+        const isRunning = sandboxes[record.id]?.running;
+        return (
+          <Space size={4}>
+            {isRunning ? (
+              <>
+                <Tooltip title="Open Terminal">
+                  <Button size="small" icon={<CodeOutlined />} onClick={() => openExecModal(record.id)} />
+                </Tooltip>
+                <Tooltip title="Stop Sandbox">
+                  <Button size="small" danger icon={<PauseCircleOutlined />} onClick={() => handleStopSandbox(record.id)} />
+                </Tooltip>
+              </>
+            ) : (
+              <>
+                <Tooltip title="Start Sandbox">
+                  <Button size="small" type="primary" icon={<CaretRightOutlined />} onClick={() => handleStartSandbox(record.id)} />
+                </Tooltip>
+                <Tooltip title="Pull Image">
+                  <Button size="small" icon={<DownloadOutlined />} onClick={() => handlePullImage(record.id)} />
+                </Tooltip>
+              </>
+            )}
+            <Tooltip title="Edit">
+              <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(record)} />
             </Tooltip>
-          </Popconfirm>
-        </Space>
-      ),
+            <Popconfirm title="Delete this config?" onConfirm={() => handleDelete(record.id)}>
+              <Tooltip title="Delete">
+                <Button size="small" danger icon={<DeleteOutlined />} />
+              </Tooltip>
+            </Popconfirm>
+          </Space>
+        );
+      },
     },
   ];
 
@@ -168,18 +284,17 @@ export default function Docker() {
         {status?.connected ? (
           <>
             <span className="status-dot online pulse" />
-            <div>
+            <div style={{ flex: 1 }}>
               <strong style={{ color: 'var(--color-success)', fontSize: 14 }}>Docker Connected</strong>
               <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
                 {status.message}
-                {status.containers?.length > 0 && (
-                  <span style={{ marginLeft: 8 }}>
-                    <HddOutlined style={{ marginRight: 4 }} />
-                    {status.containers.length} container(s) running
-                  </span>
-                )}
               </div>
             </div>
+            {status.containers?.length > 0 && (
+              <Tag color="blue" icon={<HddOutlined />}>
+                {status.containers.length} container(s)
+              </Tag>
+            )}
           </>
         ) : (
           <>
@@ -206,6 +321,7 @@ export default function Docker() {
         <Table dataSource={configs} columns={columns} rowKey="id" loading={loading} pagination={false} />
       )}
 
+      {/* Config Modal */}
       <Modal
         title={editing ? 'Edit Docker Config' : 'Add Docker Config'}
         open={modalOpen}
@@ -237,6 +353,77 @@ export default function Docker() {
             <Switch />
           </Form.Item>
         </Form>
+      </Modal>
+
+      {/* Exec Terminal Modal */}
+      <Modal
+        title={
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <CodeOutlined /> Sandbox Terminal
+          </span>
+        }
+        open={!!execModal}
+        onCancel={() => setExecModal(null)}
+        footer={null}
+        width={720}
+        destroyOnClose
+      >
+        <Tabs
+          items={[
+            {
+              key: 'exec',
+              label: <span><SendOutlined /> Execute</span>,
+              children: (
+                <div>
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                    <Input
+                      placeholder="Enter command..."
+                      value={execCommand}
+                      onChange={(e) => setExecCommand(e.target.value)}
+                      onPressEnter={handleExec}
+                      prefix={<span style={{ color: 'var(--color-primary)', fontFamily: 'var(--font-mono)' }}>$</span>}
+                      style={{ fontFamily: 'var(--font-mono)', fontSize: 13 }}
+                    />
+                    <Button
+                      type="primary"
+                      icon={<CaretRightOutlined />}
+                      onClick={handleExec}
+                      loading={execLoading}
+                    >
+                      Run
+                    </Button>
+                  </div>
+                  <pre className="code-block" style={{ minHeight: 200, maxHeight: 400, background: 'var(--bg-code)' }}>
+                    {execOutput || 'Output will appear here...'}
+                  </pre>
+                </div>
+              ),
+            },
+            {
+              key: 'logs',
+              label: <span><FileTextOutlined /> Logs</span>,
+              children: (
+                <div>
+                  <Button
+                    size="small"
+                    style={{ marginBottom: 8 }}
+                    onClick={async () => {
+                      try {
+                        const result = await api.getSandboxLogs(execModal, 100);
+                        setSandboxLogs(result.logs || 'No logs available');
+                      } catch { setSandboxLogs('Failed to load logs'); }
+                    }}
+                  >
+                    Refresh Logs
+                  </Button>
+                  <pre className="code-block" style={{ minHeight: 200, maxHeight: 400 }}>
+                    {sandboxLogs || 'No logs available'}
+                  </pre>
+                </div>
+              ),
+            },
+          ]}
+        />
       </Modal>
     </div>
   );

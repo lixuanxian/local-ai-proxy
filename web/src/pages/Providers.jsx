@@ -47,6 +47,7 @@ export default function Providers() {
   const [editing, setEditing] = useState(null);
   const [form] = Form.useForm();
   const [formType, setFormType] = useState('cli');
+  const [testResults, setTestResults] = useState({});
 
   const load = async () => {
     setLoading(true);
@@ -107,12 +108,17 @@ export default function Providers() {
   };
 
   const handleTest = async (id) => {
-    message.loading({ content: 'Testing connection...', key: 'test' });
-    const result = await api.testProvider(id);
-    if (result.ok) {
-      message.success({ content: `Connected! ${result.latency_ms}ms`, key: 'test' });
-    } else {
-      message.error({ content: `Failed: ${result.error}`, key: 'test', duration: 5 });
+    setTestResults(prev => ({ ...prev, [id]: { testing: true } }));
+    try {
+      const result = await api.testProvider(id);
+      setTestResults(prev => ({ ...prev, [id]: result }));
+      if (result.ok) {
+        message.success({ content: `Connected! ${result.latency_ms}ms`, key: 'test' });
+      } else {
+        message.error({ content: `Failed: ${result.error}`, key: 'test', duration: 5 });
+      }
+    } catch (err) {
+      setTestResults(prev => ({ ...prev, [id]: { ok: false, error: err.message } }));
     }
   };
 
@@ -196,6 +202,26 @@ export default function Providers() {
               )}
             </div>
 
+            {testResults[p.id] && !testResults[p.id].testing && (
+              <div style={{
+                marginBottom: 10,
+                padding: '6px 10px',
+                borderRadius: 'var(--radius-sm)',
+                fontSize: 12,
+                background: testResults[p.id].ok ? 'var(--color-success-bg)' : 'var(--color-error-bg)',
+                color: testResults[p.id].ok ? 'var(--color-success)' : 'var(--color-error)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+              }}>
+                {testResults[p.id].ok ? <CheckCircleOutlined /> : <CloseCircleOutlined />}
+                {testResults[p.id].ok
+                  ? `Connected (${testResults[p.id].latency_ms}ms)`
+                  : `Error: ${testResults[p.id].error?.slice(0, 60)}`
+                }
+              </div>
+            )}
+
             <div style={{
               display: 'flex',
               gap: 6,
@@ -203,7 +229,12 @@ export default function Providers() {
               borderTop: '1px solid var(--border-color-light)',
             }}>
               <Tooltip title="Test Connection">
-                <Button size="small" icon={<PlayCircleOutlined />} onClick={() => handleTest(p.id)}>
+                <Button
+                  size="small"
+                  icon={<PlayCircleOutlined />}
+                  onClick={() => handleTest(p.id)}
+                  loading={testResults[p.id]?.testing}
+                >
                   Test
                 </Button>
               </Tooltip>
