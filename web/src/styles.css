@@ -1813,6 +1813,77 @@ select:focus {
   font-size: 13px;
 }
 
+/* Settings drawer */
+.chat-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.chat-settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.chat-settings-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+}
+
+.chat-settings-hint {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-top: 2px;
+}
+
+.chat-settings-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.chat-preset-chip {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  min-width: 90px;
+}
+
+.chat-preset-chip:hover {
+  border-color: var(--color-primary-border);
+  background: var(--color-primary-bg);
+}
+
+.chat-preset-chip.active {
+  border-color: var(--color-primary);
+  background: var(--color-primary-bg);
+  color: var(--color-primary);
+}
+
+.chat-preset-chip span:first-child {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.chat-preset-desc {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  margin-top: 1px;
+}
+
+.chat-preset-chip.active .chat-preset-desc {
+  color: var(--color-primary-light);
+}
+
 .chat-input-box {
   display: flex;
   align-items: flex-end;

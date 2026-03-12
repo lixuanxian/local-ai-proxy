@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Input, Button, Select, Checkbox, Upload, Tooltip, Empty, Popconfirm, Dropdown, Badge, message, Spin } from 'antd';
+import { Input, Button, Select, Checkbox, Upload, Tooltip, Empty, Popconfirm, Dropdown, Badge, message, Spin, Drawer, Slider, InputNumber } from 'antd';
 import {
   SendOutlined,
   PlusOutlined,
@@ -19,12 +19,24 @@ import {
   DownOutlined,
   BulbOutlined,
   FormOutlined,
+  SettingOutlined,
+  ExperimentOutlined,
 } from '@ant-design/icons';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { api } from '../api';
 
 const { TextArea } = Input;
+
+const PRESET_ROLES = [
+  { label: 'None', value: '', description: 'No system prompt' },
+  { label: 'Code Assistant', value: 'You are an expert software engineer. Write clean, efficient, well-documented code. Follow best practices and explain your reasoning when needed.', description: 'Expert coder' },
+  { label: 'Writing Editor', value: 'You are a professional writing editor. Help improve clarity, grammar, tone, and structure. Provide suggestions and rewrites when appropriate.', description: 'Text polish' },
+  { label: 'Translator', value: 'You are a professional translator. Translate text accurately while preserving meaning, tone, and cultural nuances. If no target language is specified, translate to English.', description: 'Multi-language' },
+  { label: 'Data Analyst', value: 'You are a data analysis expert. Help interpret data, suggest visualizations, write SQL/Python for data processing, and explain statistical concepts clearly.', description: 'Data & stats' },
+  { label: 'Teacher', value: 'You are a patient and thorough teacher. Explain concepts step by step, use analogies, provide examples, and check for understanding. Adapt your explanation level to the student.', description: 'Clear explanations' },
+  { label: 'Creative Writer', value: 'You are a creative writing assistant. Help with storytelling, world-building, character development, dialogue, and creative expression. Be imaginative and inspiring.', description: 'Stories & creativity' },
+];
 
 export default function Chat() {
   // State
@@ -47,6 +59,10 @@ export default function Chat() {
   const [convListLoading, setConvListLoading] = useState(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [chatMode, setChatMode] = useState('edit'); // 'plan' or 'edit'
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [systemPrompt, setSystemPrompt] = useState('');
+  const [temperature, setTemperature] = useState(null);
+  const [maxTokens, setMaxTokens] = useState(null);
 
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
@@ -88,6 +104,9 @@ export default function Chat() {
       setMessages(data.messages || []);
       if (data.provider_id) setSelectedProvider(data.provider_id);
       if (data.model) setSelectedModel(data.model);
+      setSystemPrompt(data.system_prompt || '');
+      setTemperature(data.temperature ?? null);
+      setMaxTokens(data.max_tokens ?? null);
     } catch {
       message.error('Failed to load conversation');
     }
@@ -302,6 +321,14 @@ export default function Chat() {
 
   const enabledProviders = providers.filter(p => p.enabled);
 
+  // Save conversation settings
+  const saveConvSettings = useCallback((updates) => {
+    if (!activeConvId) return;
+    api.updateConversation(activeConvId, updates).then(data => {
+      setActiveConv(prev => ({ ...prev, ...updates }));
+    });
+  }, [activeConvId]);
+
   return (
     <div className="chat-layout">
       {/* Conversation Sidebar */}
@@ -441,8 +468,99 @@ export default function Chat() {
                   style={{ width: 160 }}
                   size="small"
                 />
+                <Tooltip title="Model Settings">
+                  <Button
+                    type="text"
+                    icon={<SettingOutlined />}
+                    onClick={() => setSettingsOpen(true)}
+                    size="small"
+                  />
+                </Tooltip>
               </div>
             </div>
+
+            {/* Settings Drawer */}
+            <Drawer
+              title="Conversation Settings"
+              open={settingsOpen}
+              onClose={() => setSettingsOpen(false)}
+              width={400}
+            >
+              <div className="chat-settings">
+                <div className="chat-settings-section">
+                  <label className="chat-settings-label">
+                    <ExperimentOutlined style={{ marginRight: 6 }} />
+                    Role / System Prompt
+                  </label>
+                  <div className="chat-settings-presets">
+                    {PRESET_ROLES.map(role => (
+                      <div
+                        key={role.label}
+                        className={`chat-preset-chip ${systemPrompt === role.value ? 'active' : ''}`}
+                        onClick={() => {
+                          setSystemPrompt(role.value);
+                          saveConvSettings({ system_prompt: role.value });
+                        }}
+                      >
+                        <span>{role.label}</span>
+                        <span className="chat-preset-desc">{role.description}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <TextArea
+                    placeholder="Custom system prompt... (defines the AI's role and behavior)"
+                    value={systemPrompt}
+                    onChange={e => setSystemPrompt(e.target.value)}
+                    onBlur={() => saveConvSettings({ system_prompt: systemPrompt })}
+                    autoSize={{ minRows: 3, maxRows: 8 }}
+                    style={{ marginTop: 8 }}
+                  />
+                </div>
+
+                <div className="chat-settings-section">
+                  <label className="chat-settings-label">Temperature</label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <Slider
+                      min={0}
+                      max={2}
+                      step={0.1}
+                      value={temperature ?? 1}
+                      onChange={val => setTemperature(val)}
+                      onChangeComplete={val => saveConvSettings({ temperature: val })}
+                      style={{ flex: 1 }}
+                    />
+                    <InputNumber
+                      min={0}
+                      max={2}
+                      step={0.1}
+                      value={temperature ?? 1}
+                      onChange={val => { setTemperature(val); saveConvSettings({ temperature: val }); }}
+                      size="small"
+                      style={{ width: 70 }}
+                    />
+                  </div>
+                  <div className="chat-settings-hint">
+                    Lower = more focused, Higher = more creative
+                  </div>
+                </div>
+
+                <div className="chat-settings-section">
+                  <label className="chat-settings-label">Max Tokens</label>
+                  <InputNumber
+                    min={1}
+                    max={200000}
+                    step={256}
+                    value={maxTokens}
+                    onChange={val => { setMaxTokens(val); saveConvSettings({ max_tokens: val }); }}
+                    placeholder="Default (no limit)"
+                    style={{ width: '100%' }}
+                  />
+                  <div className="chat-settings-hint">
+                    Maximum number of tokens in the response
+                  </div>
+                </div>
+              </div>
+            </Drawer>
 
             {/* Messages */}
             <div className="chat-messages">

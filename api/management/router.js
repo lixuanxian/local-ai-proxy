@@ -331,14 +331,14 @@ module.exports = function createManagementRouter(providerRegistry) {
   router.put("/api/conversations/:id", (req, res) => {
     const conv = config.getConversation(req.params.id);
     if (!conv) return res.status(404).json({ error: "Conversation not found" });
-    if (req.body.title) config.updateConversationTitle(req.params.id, req.body.title);
-    if (req.body.provider_id !== undefined || req.body.model !== undefined) {
-      config.saveConversation({
-        ...conv,
-        provider_id: req.body.provider_id !== undefined ? req.body.provider_id : conv.provider_id,
-        model: req.body.model !== undefined ? req.body.model : conv.model,
-      });
-    }
+    const updates = { ...conv };
+    if (req.body.title !== undefined) updates.title = req.body.title;
+    if (req.body.provider_id !== undefined) updates.provider_id = req.body.provider_id;
+    if (req.body.model !== undefined) updates.model = req.body.model;
+    if (req.body.system_prompt !== undefined) updates.system_prompt = req.body.system_prompt;
+    if (req.body.temperature !== undefined) updates.temperature = req.body.temperature;
+    if (req.body.max_tokens !== undefined) updates.max_tokens = req.body.max_tokens;
+    config.saveConversation(updates);
     res.json(config.getConversation(req.params.id));
   });
 
@@ -383,16 +383,17 @@ module.exports = function createManagementRouter(providerRegistry) {
     const chatMessages = allMessages.map(m => ({ role: m.role, content: m.content }));
 
     // Prepend system prompt based on mode
-    if (mode === "plan") {
-      chatMessages.unshift({
-        role: "system",
-        content: "You are in Plan mode. Before implementing anything, first analyze the request and create a detailed step-by-step plan. Outline your approach, list the key considerations, potential issues, and proposed solutions. Structure your response with clear headings and numbered steps. Only after presenting the plan should you ask if the user wants to proceed with implementation.",
-      });
-    } else if (mode === "edit") {
-      chatMessages.unshift({
-        role: "system",
-        content: "You are in Edit mode. Directly implement changes, write code, and provide concrete solutions. Be concise and action-oriented. Focus on producing working code and clear modifications rather than lengthy explanations.",
-      });
+    const modePrompts = {
+      plan: "You are in Plan mode. Before implementing anything, first analyze the request and create a detailed step-by-step plan. Outline your approach, list the key considerations, potential issues, and proposed solutions. Structure your response with clear headings and numbered steps. Only after presenting the plan should you ask if the user wants to proceed with implementation.",
+      edit: "You are in Edit mode. Directly implement changes, write code, and provide concrete solutions. Be concise and action-oriented. Focus on producing working code and clear modifications rather than lengthy explanations.",
+    };
+
+    // Build system message: conversation system_prompt + mode prompt
+    const systemParts = [];
+    if (conv.system_prompt) systemParts.push(conv.system_prompt);
+    if (mode && modePrompts[mode]) systemParts.push(modePrompts[mode]);
+    if (systemParts.length > 0) {
+      chatMessages.unshift({ role: "system", content: systemParts.join("\n\n") });
     }
 
     // Resolve provider
@@ -439,7 +440,7 @@ module.exports = function createManagementRouter(providerRegistry) {
       let fullResponse = "";
 
       try {
-        const emitter = provider.chatStream(chatMessages, { model });
+        const emitter = provider.chatStream(chatMessages, { model, temperature: conv.temperature, max_tokens: conv.max_tokens });
 
         const onText = (text) => {
           fullResponse += text;
@@ -477,7 +478,7 @@ module.exports = function createManagementRouter(providerRegistry) {
 
     // Non-streaming response
     try {
-      const result = await provider.chat(chatMessages, { model });
+      const result = await provider.chat(chatMessages, { model, temperature: conv.temperature, max_tokens: conv.max_tokens });
       const assistantContent = result?.choices?.[0]?.message?.content
         || result?.content?.[0]?.text
         || (typeof result === "string" ? result : JSON.stringify(result));
