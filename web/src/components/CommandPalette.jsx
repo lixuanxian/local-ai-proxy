@@ -9,10 +9,12 @@ import {
   SettingOutlined,
   BulbOutlined,
   SearchOutlined,
+  MessageOutlined,
 } from '@ant-design/icons';
 
 const commands = [
   { id: 'dashboard', label: 'Go to Dashboard', icon: <DashboardOutlined />, path: '/', keywords: 'home overview stats' },
+  { id: 'chat', label: 'Go to Chat', icon: <MessageOutlined />, path: '/chat', keywords: 'conversation message talk ai' },
   { id: 'providers', label: 'Go to Providers', icon: <ApiOutlined />, path: '/providers', keywords: 'api connection model' },
   { id: 'logs', label: 'Go to Logs', icon: <FileTextOutlined />, path: '/logs', keywords: 'request response debug' },
   { id: 'apps', label: 'Go to Apps', icon: <AppstoreOutlined />, path: '/apps', keywords: 'links bookmarks cors' },

@@ -332,6 +332,13 @@ module.exports = function createManagementRouter(providerRegistry) {
     const conv = config.getConversation(req.params.id);
     if (!conv) return res.status(404).json({ error: "Conversation not found" });
     if (req.body.title) config.updateConversationTitle(req.params.id, req.body.title);
+    if (req.body.provider_id !== undefined || req.body.model !== undefined) {
+      config.saveConversation({
+        ...conv,
+        provider_id: req.body.provider_id !== undefined ? req.body.provider_id : conv.provider_id,
+        model: req.body.model !== undefined ? req.body.model : conv.model,
+      });
+    }
     res.json(config.getConversation(req.params.id));
   });
 
