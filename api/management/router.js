@@ -95,8 +95,17 @@ module.exports = function createManagementRouter(providerRegistry) {
     const providerConfig = config.getProvider(req.params.id);
     if (!providerConfig) return res.status(404).json({ error: "Provider not found" });
 
-    // Try to find the provider in the registry and send a simple test message
-    const provider = providerRegistry.get(providerConfig.id) || providerRegistry.get(providerConfig.name?.toLowerCase());
+    // Map DB type/id to registry name
+    const typeToRegistry = {
+      'cli': 'claude', 'codex-cli': 'codex', 'aider-cli': 'aider',
+      'opencode-cli': 'opencode', 'openai-api': 'openai', 'ollama': 'ollama',
+      'gemini-api': 'gemini', 'anthropic-api': 'openai',
+    };
+    // Try: exact id → command name → type mapping → lowercase name
+    const provider = providerRegistry.get(providerConfig.id)
+      || providerRegistry.get(providerConfig.command)
+      || providerRegistry.get(typeToRegistry[providerConfig.type])
+      || providerRegistry.get(providerConfig.name?.toLowerCase());
     if (!provider) {
       return res.json({ ok: false, error: "Provider not loaded in registry" });
     }
