@@ -352,7 +352,7 @@ module.exports = function createManagementRouter(providerRegistry) {
     const conv = config.getConversation(req.params.id);
     if (!conv) return res.status(404).json({ error: "Conversation not found" });
 
-    const { content, attachments, skills: selectedSkills, stream } = req.body;
+    const { content, attachments, skills: selectedSkills, stream, mode } = req.body;
     if (!content && (!attachments || attachments.length === 0)) {
       return res.status(400).json({ error: "content is required" });
     }
@@ -381,6 +381,19 @@ module.exports = function createManagementRouter(providerRegistry) {
     // Build messages array from conversation history
     const allMessages = config.getMessages(req.params.id);
     const chatMessages = allMessages.map(m => ({ role: m.role, content: m.content }));
+
+    // Prepend system prompt based on mode
+    if (mode === "plan") {
+      chatMessages.unshift({
+        role: "system",
+        content: "You are in Plan mode. Before implementing anything, first analyze the request and create a detailed step-by-step plan. Outline your approach, list the key considerations, potential issues, and proposed solutions. Structure your response with clear headings and numbered steps. Only after presenting the plan should you ask if the user wants to proceed with implementation.",
+      });
+    } else if (mode === "edit") {
+      chatMessages.unshift({
+        role: "system",
+        content: "You are in Edit mode. Directly implement changes, write code, and provide concrete solutions. Be concise and action-oriented. Focus on producing working code and clear modifications rather than lengthy explanations.",
+      });
+    }
 
     // Resolve provider
     const providerId = conv.provider_id;

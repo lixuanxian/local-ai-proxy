@@ -1776,6 +1776,43 @@ select:focus {
   font-size: 12px;
 }
 
+.chat-mode-toggle {
+  display: flex;
+  gap: 4px;
+  padding: 4px 0;
+  margin-bottom: 4px;
+}
+
+.chat-mode-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  border: 1px solid transparent;
+  transition: all var(--transition-fast);
+  user-select: none;
+}
+
+.chat-mode-btn:hover {
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+}
+
+.chat-mode-btn.active {
+  color: var(--color-primary);
+  background: var(--color-primary-bg);
+  border-color: var(--color-primary-border);
+}
+
+.chat-mode-btn .anticon {
+  font-size: 13px;
+}
+
 .chat-input-box {
   display: flex;
   align-items: flex-end;

@@ -17,6 +17,8 @@ import {
   FileTextOutlined,
   FileImageOutlined,
   DownOutlined,
+  BulbOutlined,
+  FormOutlined,
 } from '@ant-design/icons';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -44,6 +46,7 @@ export default function Chat() {
   const [editTitleValue, setEditTitleValue] = useState('');
   const [convListLoading, setConvListLoading] = useState(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [chatMode, setChatMode] = useState('edit'); // 'plan' or 'edit'
 
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
@@ -185,6 +188,7 @@ export default function Chat() {
         content: userContent,
         attachments: userAttachments,
         skills: selectedSkills.length > 0 ? selectedSkills : undefined,
+        mode: chatMode,
       });
 
       const decoder = new TextDecoder();
@@ -244,7 +248,7 @@ export default function Chat() {
       setStreaming(false);
       loadConversations();
     }
-  }, [inputText, attachments, activeConvId, selectedProvider, selectedModel, selectedSkills, streaming, messages.length]);
+  }, [inputText, attachments, activeConvId, selectedProvider, selectedModel, selectedSkills, streaming, messages.length, chatMode]);
 
   // Handle file upload
   const handleFileUpload = async (file) => {
@@ -526,6 +530,24 @@ export default function Chat() {
                   />
                 </div>
               )}
+
+              {/* Mode toggle */}
+              <div className="chat-mode-toggle">
+                <div
+                  className={`chat-mode-btn ${chatMode === 'plan' ? 'active' : ''}`}
+                  onClick={() => setChatMode('plan')}
+                >
+                  <BulbOutlined />
+                  <span>Plan</span>
+                </div>
+                <div
+                  className={`chat-mode-btn ${chatMode === 'edit' ? 'active' : ''}`}
+                  onClick={() => setChatMode('edit')}
+                >
+                  <FormOutlined />
+                  <span>Edit</span>
+                </div>
+              </div>
 
               <div className="chat-input-box">
                 <input
