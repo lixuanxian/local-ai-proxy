@@ -1,7 +1,27 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Table, Button, Switch, Tag, Space, DatePicker, Input, Modal, message, Popconfirm, Card, Row, Col, Statistic } from 'antd';
-import { DeleteOutlined, ReloadOutlined } from '@ant-design/icons';
+import { Table, Button, Switch, Tag, Space, Input, Modal, message, Popconfirm, Tooltip } from 'antd';
+import {
+  DeleteOutlined,
+  ReloadOutlined,
+  ThunderboltOutlined,
+  ClockCircleOutlined,
+  WarningOutlined,
+  CalendarOutlined,
+  FileTextOutlined,
+  SearchOutlined,
+} from '@ant-design/icons';
 import { api } from '../api';
+
+function timeAgo(timestamp) {
+  if (!timestamp) return '-';
+  const now = new Date();
+  const t = new Date(timestamp);
+  const diff = Math.floor((now - t) / 1000);
+  if (diff < 60) return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return t.toLocaleDateString();
+}
 
 export default function Logs() {
   const [logs, setLogs] = useState({ rows: [], total: 0, page: 1, pages: 0 });
@@ -40,31 +60,79 @@ export default function Logs() {
   };
 
   const columns = [
-    { title: 'Time', dataIndex: 'timestamp', key: 'timestamp', width: 170 },
     {
-      title: 'Format', dataIndex: 'api_format', key: 'format', width: 90,
-      render: (v) => <Tag color={v === 'anthropic' ? 'orange' : 'blue'}>{v || '-'}</Tag>,
+      title: 'Time', dataIndex: 'timestamp', key: 'timestamp', width: 130,
+      render: (v) => (
+        <Tooltip title={v}>
+          <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{timeAgo(v)}</span>
+        </Tooltip>
+      ),
     },
-    { title: 'Provider', dataIndex: 'provider_id', key: 'provider', render: (v) => v || '-' },
-    { title: 'Model', dataIndex: 'model', key: 'model', render: (v) => v || '-' },
+    {
+      title: 'Format', dataIndex: 'api_format', key: 'format', width: 100,
+      render: (v) => (
+        <Tag color={v === 'anthropic' ? 'orange' : 'blue'} style={{ fontSize: 11 }}>
+          {v || '-'}
+        </Tag>
+      ),
+    },
+    {
+      title: 'Provider', dataIndex: 'provider_id', key: 'provider', width: 120,
+      render: (v) => <span style={{ fontWeight: 500 }}>{v || '-'}</span>,
+    },
+    {
+      title: 'Model', dataIndex: 'model', key: 'model',
+      render: (v) => (
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-secondary)' }}>
+          {v || '-'}
+        </span>
+      ),
+    },
     {
       title: 'Status', dataIndex: 'status_code', key: 'status', width: 80,
-      render: (v) => <Tag color={v && v < 400 ? 'green' : 'red'}>{v || '-'}</Tag>,
+      render: (v) => (
+        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <span className={`status-dot ${v && v < 400 ? 'online' : 'offline'}`} />
+          {v || '-'}
+        </span>
+      ),
     },
-    { title: 'Latency', dataIndex: 'latency_ms', key: 'latency', width: 90, render: (v) => `${v || 0}ms` },
+    {
+      title: 'Latency', dataIndex: 'latency_ms', key: 'latency', width: 90,
+      render: (v) => (
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: v > 5000 ? 'var(--color-warning)' : 'var(--text-secondary)' }}>
+          {v || 0}ms
+        </span>
+      ),
+    },
     {
       title: 'Tokens', key: 'tokens', width: 80,
-      render: (_, r) => (r.input_tokens || 0) + (r.output_tokens || 0),
+      render: (_, r) => {
+        const total = (r.input_tokens || 0) + (r.output_tokens || 0);
+        return <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{total || '-'}</span>;
+      },
     },
   ];
 
+  const statCards = [
+    { label: 'Total', value: stats?.total || 0, icon: <FileTextOutlined />, accent: 'primary', iconClass: 'primary' },
+    { label: 'Today', value: stats?.today || 0, icon: <CalendarOutlined />, accent: 'info', iconClass: 'info' },
+    { label: 'Avg Latency', value: stats?.avgLatency || 0, suffix: 'ms', icon: <ClockCircleOutlined />, accent: 'warning', iconClass: 'warning' },
+    { label: 'Errors', value: stats?.errors || 0, icon: <WarningOutlined />, accent: 'error', iconClass: 'error' },
+  ];
+
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
-        <h2>Logs</h2>
+    <div className="animate-fade-in">
+      <div className="page-header">
+        <div>
+          <h2>Request Logs</h2>
+          <div className="page-header-subtitle">
+            Monitor and debug API requests
+          </div>
+        </div>
         <Space>
-          <span>Logging:</span>
-          <Switch checked={loggingEnabled} onChange={toggleLogging} />
+          <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Logging:</span>
+          <Switch checked={loggingEnabled} onChange={toggleLogging} size="small" />
           <Popconfirm title="Clear all logs?" onConfirm={clearAll}>
             <Button danger icon={<DeleteOutlined />} size="small">Clear</Button>
           </Popconfirm>
@@ -73,24 +141,36 @@ export default function Logs() {
       </div>
 
       {stats && (
-        <Row gutter={16} style={{ marginBottom: 16 }}>
-          <Col span={6}><Card size="small"><Statistic title="Total" value={stats.total} /></Card></Col>
-          <Col span={6}><Card size="small"><Statistic title="Today" value={stats.today} /></Card></Col>
-          <Col span={6}><Card size="small"><Statistic title="Avg Latency" value={stats.avgLatency} suffix="ms" /></Card></Col>
-          <Col span={6}><Card size="small"><Statistic title="Errors" value={stats.errors} /></Card></Col>
-        </Row>
+        <div className="grid grid-4" style={{ marginBottom: 20 }}>
+          {statCards.map((card) => (
+            <div key={card.label} className={`stat-card accent-${card.accent}`}>
+              <div className={`stat-card-icon ${card.iconClass}`}>
+                {card.icon}
+              </div>
+              <div className="stat-card-label">{card.label}</div>
+              <div className="stat-card-value" style={{ fontSize: 22 }}>
+                {card.value}
+                {card.suffix && <span className="stat-card-suffix">{card.suffix}</span>}
+              </div>
+            </div>
+          ))}
+        </div>
       )}
 
-      <Space style={{ marginBottom: 12 }}>
+      <div className="filter-bar">
+        <SearchOutlined style={{ color: 'var(--text-tertiary)' }} />
         <Input
-          placeholder="Filter by provider"
+          placeholder="Filter by provider..."
           value={filters.provider}
           onChange={(e) => setFilters({ ...filters, provider: e.target.value })}
-          style={{ width: 160 }}
+          style={{ width: 200, border: 'none', boxShadow: 'none' }}
           allowClear
+          onPressEnter={() => load({ page: 1 })}
         />
-        <Button type="primary" size="small" onClick={() => load({ page: 1 })}>Apply</Button>
-      </Space>
+        <Button type="primary" size="small" onClick={() => load({ page: 1 })}>
+          Apply
+        </Button>
+      </div>
 
       <Table
         dataSource={logs.rows}
@@ -107,33 +187,77 @@ export default function Logs() {
           total: logs.total,
           pageSize: filters.limit,
           showSizeChanger: false,
+          showTotal: (total) => `${total} records`,
           onChange: (page) => { setFilters({ ...filters, page }); load({ page }); },
         }}
       />
 
       <Modal
-        title="Log Detail"
+        title="Request Detail"
         open={!!detailRecord}
         onCancel={() => setDetailRecord(null)}
         footer={null}
-        width={640}
+        width={680}
       >
         {detailRecord && (
           <div>
-            <p><strong>Time:</strong> {detailRecord.timestamp}</p>
-            <p><strong>Provider:</strong> {detailRecord.provider_id} | <strong>Model:</strong> {detailRecord.model}</p>
-            <p><strong>Status:</strong> {detailRecord.status_code} | <strong>Latency:</strong> {detailRecord.latency_ms}ms</p>
-            {detailRecord.error && <p style={{ color: '#ff4d4f' }}><strong>Error:</strong> {detailRecord.error}</p>}
-            <h4>Request</h4>
-            <pre style={{ background: '#f5f5f5', padding: 12, borderRadius: 6, fontSize: 12, maxHeight: 200, overflow: 'auto', whiteSpace: 'pre-wrap' }}>
-              {typeof detailRecord.request_body === 'string' ? detailRecord.request_body : JSON.stringify(detailRecord.request_body, null, 2)}
-            </pre>
-            <h4>Response</h4>
-            <pre style={{ background: '#f5f5f5', padding: 12, borderRadius: 6, fontSize: 12, maxHeight: 200, overflow: 'auto', whiteSpace: 'pre-wrap' }}>
-              {typeof detailRecord.response_body === 'string'
-                ? detailRecord.response_body.slice(0, 3000)
-                : JSON.stringify(detailRecord.response_body, null, 2)?.slice(0, 3000)}
-            </pre>
+            <div className="log-detail-row">
+              <div className="log-detail-item">
+                <label>Time</label>
+                <span>{detailRecord.timestamp}</span>
+              </div>
+              <div className="log-detail-item">
+                <label>Provider</label>
+                <span>{detailRecord.provider_id || '-'}</span>
+              </div>
+              <div className="log-detail-item">
+                <label>Model</label>
+                <span>{detailRecord.model || '-'}</span>
+              </div>
+              <div className="log-detail-item">
+                <label>Status</label>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <span className={`status-dot ${detailRecord.status_code < 400 ? 'online' : 'offline'}`} />
+                  {detailRecord.status_code}
+                </span>
+              </div>
+              <div className="log-detail-item">
+                <label>Latency</label>
+                <span>{detailRecord.latency_ms}ms</span>
+              </div>
+            </div>
+
+            {detailRecord.error && (
+              <div style={{
+                padding: '10px 14px',
+                background: 'var(--color-error-bg)',
+                borderRadius: 'var(--radius-sm)',
+                color: 'var(--color-error)',
+                fontSize: 13,
+                marginBottom: 16,
+              }}>
+                <WarningOutlined style={{ marginRight: 6 }} />
+                {detailRecord.error}
+              </div>
+            )}
+
+            <div className="log-detail-section">
+              <div className="log-detail-label">Request Body</div>
+              <pre className="code-block">
+                {typeof detailRecord.request_body === 'string'
+                  ? detailRecord.request_body
+                  : JSON.stringify(detailRecord.request_body, null, 2)}
+              </pre>
+            </div>
+
+            <div className="log-detail-section">
+              <div className="log-detail-label">Response Body</div>
+              <pre className="code-block">
+                {typeof detailRecord.response_body === 'string'
+                  ? detailRecord.response_body.slice(0, 3000)
+                  : JSON.stringify(detailRecord.response_body, null, 2)?.slice(0, 3000)}
+              </pre>
+            </div>
           </div>
         )}
       </Modal>
