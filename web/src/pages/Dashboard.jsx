@@ -55,6 +55,7 @@ export default function Dashboard() {
   const [providers, setProviders] = useState([]);
   const [hourlyStats, setHourlyStats] = useState([]);
   const [providerStats, setProviderStats] = useState([]);
+  const [modelStats, setModelStats] = useState([]);
   const [loading, setLoading] = useState(true);
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [countdown, setCountdown] = useState(30);
@@ -69,15 +70,17 @@ export default function Dashboard() {
       api.getProviders(),
       api.getHourlyStats().catch(() => []),
       api.getProviderStats().catch(() => []),
+      api.getModelStats().catch(() => []),
     ];
     Promise.all(promises)
-      .then(([s, i, a, p, hs, ps]) => {
+      .then(([s, i, a, p, hs, ps, ms]) => {
         setStats(s);
         setInfo(i);
         setApps(a);
         setProviders(p);
         setHourlyStats(hs);
         setProviderStats(ps);
+        setModelStats(ms);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -234,6 +237,36 @@ export default function Dashboard() {
           )}
         </div>
       </div>
+
+      {/* Model Usage */}
+      {modelStats.length > 0 && (
+        <div className="chart-card" style={{ marginBottom: 28 }}>
+          <div className="chart-card-title">
+            <RobotOutlined style={{ marginRight: 6 }} />
+            Top Models
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 8 }}>
+            {modelStats.slice(0, 8).map((m) => (
+              <div key={m.model} style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '8px 12px',
+                borderRadius: 'var(--radius-sm)',
+                background: 'var(--bg-hover)',
+                fontSize: 12,
+              }}>
+                <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-primary)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                  {m.model}
+                </span>
+                <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', marginLeft: 8, flexShrink: 0 }}>
+                  {m.count}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Provider Overview */}
       <div className="section-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

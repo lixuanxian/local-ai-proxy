@@ -37,6 +37,7 @@ export const api = {
   getLogStats: () => request('/api/logs/stats'),
   getHourlyStats: () => request('/api/logs/stats/hourly'),
   getProviderStats: () => request('/api/logs/stats/providers'),
+  getModelStats: () => request('/api/logs/stats/models'),
   clearLogs: () => request('/api/logs', { method: 'DELETE' }),
 
   // Apps
