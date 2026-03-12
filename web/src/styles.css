@@ -89,6 +89,36 @@
   --gradient-sidebar: linear-gradient(180deg, #0d0d1a 0%, #0a0a12 100%);
 }
 
+/* Dark mode specific overrides */
+[data-theme='dark'] .ant-modal .ant-modal-content {
+  background: #1f1f23;
+  border: 1px solid #27272a;
+}
+
+[data-theme='dark'] .ant-popover .ant-popover-inner {
+  background: #1f1f23;
+  border: 1px solid #27272a;
+}
+
+[data-theme='dark'] select {
+  background-color: #18181b;
+  color: #a1a1aa;
+  border-color: #27272a;
+}
+
+[data-theme='dark'] select option {
+  background-color: #18181b;
+  color: #fafafa;
+}
+
+[data-theme='dark'] .ant-input::placeholder {
+  color: #52525b;
+}
+
+[data-theme='dark'] .empty-state {
+  border-color: #27272a;
+}
+
 /* --- Reset & Base --- */
 *,
 *::before,
@@ -561,11 +591,23 @@ body {
 .provider-card:hover {
   box-shadow: var(--shadow-card-hover);
   border-color: var(--color-primary-border);
+  transform: translateY(-2px);
 }
 
 .provider-card.is-default {
   border-color: var(--color-primary-border);
   background: linear-gradient(135deg, var(--bg-card) 0%, var(--color-primary-bg) 100%);
+}
+
+.provider-card.is-default::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--gradient-primary);
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
 }
 
 /* --- App Card --- */
