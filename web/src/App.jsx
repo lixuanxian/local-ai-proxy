@@ -14,11 +14,13 @@ import {
   MenuOutlined,
   SettingOutlined,
   SearchOutlined,
+  MessageOutlined,
 } from '@ant-design/icons';
 import { api } from './api';
 import CommandPalette from './components/CommandPalette';
 
 const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Chat = lazy(() => import('./pages/Chat'));
 const Providers = lazy(() => import('./pages/Providers'));
 const Logs = lazy(() => import('./pages/Logs'));
 const Apps = lazy(() => import('./pages/Apps'));
@@ -28,6 +30,7 @@ const NotFound = lazy(() => import('./pages/NotFound'));
 
 const menuItems = [
   { key: '/', icon: <DashboardOutlined />, label: 'Dashboard' },
+  { key: '/chat', icon: <MessageOutlined />, label: 'Chat' },
   { key: '/providers', icon: <ApiOutlined />, label: 'Providers' },
   { key: '/logs', icon: <FileTextOutlined />, label: 'Logs' },
   { key: '/apps', icon: <AppstoreOutlined />, label: 'Apps' },
@@ -37,6 +40,7 @@ const menuItems = [
 
 const pageNames = {
   '/': 'Dashboard',
+  '/chat': 'Chat',
   '/providers': 'Providers',
   '/logs': 'Logs',
   '/apps': 'Apps',
@@ -83,11 +87,12 @@ export default function App() {
     const shortcuts = {
       'g': null, // prefix key
       '1': '/',
-      '2': '/providers',
-      '3': '/logs',
-      '4': '/apps',
-      '5': '/docker',
-      '6': '/settings',
+      '2': '/chat',
+      '3': '/providers',
+      '4': '/logs',
+      '5': '/apps',
+      '6': '/docker',
+      '7': '/settings',
     };
 
     if (shortcuts[e.key] !== undefined && shortcuts[e.key] !== null) {
@@ -228,6 +233,7 @@ export default function App() {
           }>
             <Routes>
               <Route path="/" element={<Dashboard />} />
+              <Route path="/chat" element={<Chat />} />
               <Route path="/providers" element={<Providers />} />
               <Route path="/logs" element={<Logs />} />
               <Route path="/apps" element={<Apps />} />

@@ -63,4 +63,38 @@ export const api = {
   execInSandbox: (configId, command) => request(`/api/docker/sandboxes/${configId}/exec`, { method: 'POST', body: { command } }),
   getSandboxLogs: (configId, tail) => request(`/api/docker/sandboxes/${configId}/logs?tail=${tail || 100}`),
   pullImage: (configId) => request(`/api/docker/configs/${configId}/pull`, { method: 'POST' }),
+
+  // Conversations
+  getConversations: (search) => request(`/api/conversations${search ? `?search=${encodeURIComponent(search)}` : ''}`),
+  createConversation: (data) => request('/api/conversations', { method: 'POST', body: data }),
+  getConversation: (id) => request(`/api/conversations/${id}`),
+  updateConversation: (id, data) => request(`/api/conversations/${id}`, { method: 'PUT', body: data }),
+  deleteConversation: (id) => request(`/api/conversations/${id}`, { method: 'DELETE' }),
+
+  // Chat messages (non-streaming)
+  sendMessage: (convId, data) => request(`/api/conversations/${convId}/messages`, { method: 'POST', body: data }),
+
+  // Chat messages (streaming) - returns EventSource-like reader
+  sendMessageStream: async (convId, data) => {
+    const res = await fetch(`/api/conversations/${convId}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...data, stream: true }),
+    });
+    return res.body.getReader();
+  },
+
+  // Skills
+  getSkills: () => request('/api/skills'),
+  createSkill: (data) => request('/api/skills', { method: 'POST', body: data }),
+  updateSkill: (id, data) => request(`/api/skills/${id}`, { method: 'PUT', body: data }),
+  deleteSkill: (id) => request(`/api/skills/${id}`, { method: 'DELETE' }),
+
+  // File upload
+  uploadFile: async (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch('/api/upload', { method: 'POST', body: formData });
+    return res.json();
+  },
 };
