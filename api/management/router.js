@@ -306,6 +306,215 @@ module.exports = function createManagementRouter(providerRegistry) {
     res.json({ logs });
   });
 
+  // ---- Conversations ----
+  router.get("/api/conversations", (req, res) => {
+    const { search } = req.query;
+    res.json(config.getAllConversations(search));
+  });
+
+  router.post("/api/conversations", (req, res) => {
+    try {
+      const id = config.saveConversation(req.body);
+      res.status(201).json(config.getConversation(id));
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  router.get("/api/conversations/:id", (req, res) => {
+    const conv = config.getConversation(req.params.id);
+    if (!conv) return res.status(404).json({ error: "Conversation not found" });
+    const messages = config.getMessages(req.params.id);
+    res.json({ ...conv, messages: messages.map(m => ({ ...m, attachments: m.attachments ? JSON.parse(m.attachments) : null })) });
+  });
+
+  router.put("/api/conversations/:id", (req, res) => {
+    const conv = config.getConversation(req.params.id);
+    if (!conv) return res.status(404).json({ error: "Conversation not found" });
+    if (req.body.title) config.updateConversationTitle(req.params.id, req.body.title);
+    res.json(config.getConversation(req.params.id));
+  });
+
+  router.delete("/api/conversations/:id", (req, res) => {
+    config.deleteConversation(req.params.id);
+    res.json({ ok: true });
+  });
+
+  // ---- Chat (send message + get AI response with streaming) ----
+  router.post("/api/conversations/:id/messages", async (req, res) => {
+    const conv = config.getConversation(req.params.id);
+    if (!conv) return res.status(404).json({ error: "Conversation not found" });
+
+    const { content, attachments, skills: selectedSkills, stream } = req.body;
+    if (!content && (!attachments || attachments.length === 0)) {
+      return res.status(400).json({ error: "content is required" });
+    }
+
+    // Build user message content with skills prepended
+    let userContent = content || "";
+    if (selectedSkills && selectedSkills.length > 0) {
+      const allSkills = config.getAllSkills();
+      const skillPrefixes = selectedSkills
+        .map(sid => allSkills.find(s => s.id === sid))
+        .filter(Boolean)
+        .map(s => s.prompt_template);
+      if (skillPrefixes.length > 0) {
+        userContent = skillPrefixes.join("\n") + userContent;
+      }
+    }
+
+    // Save user message
+    const userMsgId = config.saveMessage({
+      conversation_id: req.params.id,
+      role: "user",
+      content: userContent,
+      attachments: attachments || null,
+    });
+
+    // Build messages array from conversation history
+    const allMessages = config.getMessages(req.params.id);
+    const chatMessages = allMessages.map(m => ({ role: m.role, content: m.content }));
+
+    // Resolve provider
+    const providerId = conv.provider_id;
+    const model = conv.model;
+
+    const typeToRegistry = {
+      'cli': 'claude', 'codex-cli': 'codex', 'aider-cli': 'aider',
+      'opencode-cli': 'opencode', 'openai-api': 'openai', 'ollama': 'ollama',
+      'gemini-api': 'gemini', 'anthropic-api': 'openai',
+    };
+
+    let provider = null;
+    if (providerId) {
+      const providerConfig = config.getProvider(providerId);
+      if (providerConfig) {
+        provider = providerRegistry.get(providerConfig.id)
+          || providerRegistry.get(providerConfig.command)
+          || providerRegistry.get(typeToRegistry[providerConfig.type])
+          || providerRegistry.get(providerConfig.name?.toLowerCase());
+      }
+    }
+    if (!provider) {
+      const defaultName = providerRegistry.getDefault();
+      provider = providerRegistry.get(defaultName);
+    }
+
+    if (!provider) {
+      return res.status(500).json({ error: "No provider available" });
+    }
+
+    // Streaming response
+    if (stream) {
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+
+      const assistantMsgId = config.saveMessage({
+        conversation_id: req.params.id,
+        role: "assistant",
+        content: "",
+      });
+
+      let fullResponse = "";
+
+      try {
+        const emitter = provider.chatStream(chatMessages, { model });
+
+        const onText = (text) => {
+          fullResponse += text;
+          res.write(`data: ${JSON.stringify({ type: "text", text, messageId: assistantMsgId })}\n\n`);
+        };
+
+        const onDone = () => {
+          config.updateMessageContent(assistantMsgId, fullResponse);
+          res.write(`data: ${JSON.stringify({ type: "done", messageId: assistantMsgId })}\n\n`);
+          res.end();
+        };
+
+        const onError = (err) => {
+          config.updateMessageContent(assistantMsgId, fullResponse || `Error: ${err.message}`);
+          res.write(`data: ${JSON.stringify({ type: "error", error: err.message })}\n\n`);
+          res.end();
+        };
+
+        if (emitter.stdout) {
+          emitter.stdout.on("data", (chunk) => onText(chunk.toString()));
+          emitter.on("close", onDone);
+          emitter.on("error", onError);
+        } else {
+          emitter.on("data", onText);
+          emitter.on("end", onDone);
+          emitter.on("error", onError);
+        }
+      } catch (err) {
+        config.updateMessageContent(assistantMsgId, `Error: ${err.message}`);
+        res.write(`data: ${JSON.stringify({ type: "error", error: err.message })}\n\n`);
+        res.end();
+      }
+      return;
+    }
+
+    // Non-streaming response
+    try {
+      const result = await provider.chat(chatMessages, { model });
+      const assistantContent = result?.choices?.[0]?.message?.content
+        || result?.content?.[0]?.text
+        || (typeof result === "string" ? result : JSON.stringify(result));
+
+      const assistantMsgId = config.saveMessage({
+        conversation_id: req.params.id,
+        role: "assistant",
+        content: assistantContent,
+      });
+
+      res.json({
+        userMessage: { id: userMsgId, role: "user", content: userContent },
+        assistantMessage: { id: assistantMsgId, role: "assistant", content: assistantContent },
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ---- Skills ----
+  router.get("/api/skills", (req, res) => {
+    res.json(config.getAllSkills());
+  });
+
+  router.post("/api/skills", (req, res) => {
+    try {
+      const id = config.saveSkill(req.body);
+      res.status(201).json(config.getSkill(id));
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  router.put("/api/skills/:id", (req, res) => {
+    if (!config.getSkill(req.params.id)) return res.status(404).json({ error: "Skill not found" });
+    config.saveSkill({ ...req.body, id: req.params.id });
+    res.json(config.getSkill(req.params.id));
+  });
+
+  router.delete("/api/skills/:id", (req, res) => {
+    config.deleteSkill(req.params.id);
+    res.json({ ok: true });
+  });
+
+  // ---- File Upload ----
+  router.post("/api/upload", (req, res) => {
+    // Handled by multer middleware mounted in server.js
+    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+    res.json({
+      id: req.file.filename,
+      name: req.file.originalname,
+      size: req.file.size,
+      mimetype: req.file.mimetype,
+      url: `/uploads/${req.file.filename}`,
+    });
+  });
+
   // Pull image for a config
   router.post("/api/docker/configs/:id/pull", async (req, res) => {
     const dockerConfig = config.getDockerConfig(req.params.id);

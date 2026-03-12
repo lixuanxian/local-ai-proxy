@@ -1,5 +1,8 @@
 const express = require("express");
 const path = require("path");
+const fs = require("fs");
+const multer = require("multer");
+const crypto = require("crypto");
 const { createDefaultRegistry } = require("./lib/provider-registry");
 const { loggerMiddleware } = require("./lib/logger");
 const createOpenAIRouter = require("./api/openai/router");
@@ -9,7 +12,29 @@ const createManagementRouter = require("./api/management/router");
 const config = require("./lib/config");
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: "50mb" }));
+
+// Uploads directory
+const UPLOADS_DIR = path.join(__dirname, "data", "uploads");
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
+
+// Multer file upload config
+const storage = multer.diskStorage({
+  destination: UPLOADS_DIR,
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname);
+    cb(null, `${crypto.randomUUID()}${ext}`);
+  },
+});
+const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 } });
+
+// Serve uploaded files
+app.use("/uploads", express.static(UPLOADS_DIR));
+
+// Apply multer to upload endpoint
+app.post("/api/upload", upload.single("file"));
 
 const PORT = process.env.PORT || 3199;
 
