@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Switch, message, Spin, Input, Button, Tag, Tooltip } from 'antd';
+import { Switch, message, Input, Button, Tag, Tooltip } from 'antd';
 import {
-  SettingOutlined,
-  ThunderboltOutlined,
   SaveOutlined,
-  InfoCircleOutlined,
   KeyOutlined,
+  CopyOutlined,
+  GithubOutlined,
 } from '@ant-design/icons';
 import { api } from '../api';
 
@@ -38,8 +37,14 @@ export default function Settings() {
 
   if (loading) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 400 }}>
-        <Spin size="large" />
+      <div className="animate-fade-in">
+        <div style={{ marginBottom: 28 }}>
+          <div className="skeleton" style={{ width: 140, height: 30, marginBottom: 8, borderRadius: 'var(--radius-sm)' }} />
+          <div className="skeleton" style={{ width: 250, height: 16, borderRadius: 'var(--radius-sm)' }} />
+        </div>
+        <div className="skeleton" style={{ width: '100%', height: 160, borderRadius: 'var(--radius-md)', marginBottom: 16 }} />
+        <div className="skeleton" style={{ width: '100%', height: 280, borderRadius: 'var(--radius-md)', marginBottom: 16 }} />
+        <div className="skeleton" style={{ width: '100%', height: 200, borderRadius: 'var(--radius-md)' }} />
       </div>
     );
   }
@@ -140,6 +145,7 @@ export default function Settings() {
             <Tooltip title="Copy full URL">
               <Button
                 size="small"
+                icon={<CopyOutlined />}
                 onClick={() => {
                   navigator.clipboard.writeText(`http://localhost:${settings?.port || 3199}${ep.endpoint}`);
                   message.success('Copied!');
@@ -195,8 +201,21 @@ export default function Settings() {
         padding: '32px 0 16px',
         fontSize: 12,
         color: 'var(--text-tertiary)',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: 8,
       }}>
-        Local AI Proxy v1.0 &middot; Unified AI Gateway
+        <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-secondary)' }}>
+          Local AI Proxy v1.0
+        </div>
+        <div>Unified AI Gateway &middot; OpenAI + Anthropic Compatible</div>
+        <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+          <Tag style={{ fontSize: 11 }}>React 19</Tag>
+          <Tag style={{ fontSize: 11 }}>Ant Design 6</Tag>
+          <Tag style={{ fontSize: 11 }}>SQLite</Tag>
+          <Tag style={{ fontSize: 11 }}>Express</Tag>
+        </div>
       </div>
     </div>
   );
