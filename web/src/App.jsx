@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
-import { Menu, ConfigProvider, theme, Button } from 'antd';
+import { Menu, ConfigProvider, theme, Spin } from 'antd';
 import {
   DashboardOutlined,
   ApiOutlined,
@@ -16,14 +16,15 @@ import {
   SearchOutlined,
 } from '@ant-design/icons';
 import { api } from './api';
-import Dashboard from './pages/Dashboard';
-import Providers from './pages/Providers';
-import Logs from './pages/Logs';
-import Apps from './pages/Apps';
-import Docker from './pages/Docker';
-import Settings from './pages/Settings';
-import NotFound from './pages/NotFound';
 import CommandPalette from './components/CommandPalette';
+
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Providers = lazy(() => import('./pages/Providers'));
+const Logs = lazy(() => import('./pages/Logs'));
+const Apps = lazy(() => import('./pages/Apps'));
+const Docker = lazy(() => import('./pages/Docker'));
+const Settings = lazy(() => import('./pages/Settings'));
+const NotFound = lazy(() => import('./pages/NotFound'));
 
 const menuItems = [
   { key: '/', icon: <DashboardOutlined />, label: 'Dashboard' },
@@ -211,15 +212,21 @@ export default function App() {
           </div>
         </div>
         <div className="main-content">
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/providers" element={<Providers />} />
-            <Route path="/logs" element={<Logs />} />
-            <Route path="/apps" element={<Apps />} />
-            <Route path="/docker" element={<Docker />} />
-            <Route path="/settings" element={<Settings />} />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
+          <Suspense fallback={
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 300 }}>
+              <Spin size="large" />
+            </div>
+          }>
+            <Routes>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/providers" element={<Providers />} />
+              <Route path="/logs" element={<Logs />} />
+              <Route path="/apps" element={<Apps />} />
+              <Route path="/docker" element={<Docker />} />
+              <Route path="/settings" element={<Settings />} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </Suspense>
         </div>
       </div>
     </ConfigProvider>
