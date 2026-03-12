@@ -1,19 +1,29 @@
 import { useEffect, useState } from 'react';
-import { Card, Button, Modal, Form, Input, Row, Col, Empty, message, Popconfirm } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, LinkOutlined } from '@ant-design/icons';
+import { Button, Modal, Form, Input, Row, Col, message, Popconfirm, Spin, Tooltip } from 'antd';
+import {
+  PlusOutlined,
+  EditOutlined,
+  DeleteOutlined,
+  LinkOutlined,
+  AppstoreOutlined,
+  GlobalOutlined,
+} from '@ant-design/icons';
 import { api } from '../api';
 
 export default function Apps() {
   const [apps, setApps] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form] = Form.useForm();
 
   const load = async () => {
+    setLoading(true);
     try {
       const data = await api.getApps();
       setApps(data);
     } catch { message.error('Failed to load apps'); }
+    setLoading(false);
   };
 
   useEffect(() => { load(); }, []);
@@ -50,44 +60,133 @@ export default function Apps() {
     load();
   };
 
+  if (loading && apps.length === 0) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 400 }}>
+        <Spin size="large" />
+      </div>
+    );
+  }
+
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-        <h2>Apps</h2>
-        <Button type="primary" icon={<PlusOutlined />} onClick={openAdd}>Add App</Button>
+    <div className="animate-fade-in">
+      <div className="page-header">
+        <div>
+          <h2>Apps</h2>
+          <div className="page-header-subtitle">
+            Manage quick-access links and CORS origins
+          </div>
+        </div>
+        <Button type="primary" icon={<PlusOutlined />} onClick={openAdd}>
+          Add App
+        </Button>
       </div>
 
       {apps.length === 0 ? (
-        <Empty description="No apps configured" />
+        <div className="empty-state">
+          <div className="empty-state-icon"><AppstoreOutlined /></div>
+          <div className="empty-state-text">No apps configured yet</div>
+          <Button type="primary" icon={<PlusOutlined />} onClick={openAdd}>
+            Add Your First App
+          </Button>
+        </div>
       ) : (
-        <Row gutter={[16, 16]}>
-          {apps.map((app) => (
-            <Col xs={24} sm={12} md={8} lg={6} key={app.id}>
-              <Card
-                hoverable
-                actions={[
-                  <EditOutlined key="edit" onClick={() => openEdit(app)} />,
-                  <Popconfirm key="del" title="Delete?" onConfirm={() => handleDelete(app.id)}>
-                    <DeleteOutlined style={{ color: '#ff4d4f' }} />
-                  </Popconfirm>,
-                ]}
+        <div className="grid grid-4">
+          {apps.map((app, i) => (
+            <div key={app.id} className="card" style={{ overflow: 'hidden' }}>
+              <div
+                className="card-hoverable"
+                style={{
+                  padding: '28px 24px 16px',
+                  textAlign: 'center',
+                  cursor: 'pointer',
+                }}
+                onClick={() => window.open(app.url, '_blank')}
               >
-                <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: 36, marginBottom: 8 }}>{app.icon || <LinkOutlined />}</div>
-                  <Card.Meta
-                    title={<a href={app.url} target="_blank" rel="noopener noreferrer">{app.name}</a>}
-                    description={
-                      <div>
-                        <div style={{ fontSize: 12 }}>{app.description || ''}</div>
-                        {app.cors_origin && <div style={{ fontSize: 11, marginTop: 4, opacity: 0.6 }}>CORS: {app.cors_origin}</div>}
-                      </div>
-                    }
-                  />
+                <div style={{
+                  fontSize: 44,
+                  marginBottom: 12,
+                  lineHeight: 1,
+                }}>
+                  {app.icon || <LinkOutlined style={{ fontSize: 36, color: 'var(--color-primary)' }} />}
                 </div>
-              </Card>
-            </Col>
+                <div style={{
+                  fontWeight: 600,
+                  fontSize: 16,
+                  color: 'var(--text-primary)',
+                  marginBottom: 6,
+                }}>
+                  {app.name}
+                </div>
+                <div style={{
+                  fontSize: 13,
+                  color: 'var(--text-secondary)',
+                  lineHeight: 1.4,
+                  minHeight: 18,
+                }}>
+                  {app.description || ''}
+                </div>
+                {app.cors_origin && (
+                  <div style={{
+                    marginTop: 8,
+                    fontSize: 11,
+                    color: 'var(--text-tertiary)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 4,
+                  }}>
+                    <GlobalOutlined style={{ fontSize: 10 }} />
+                    {app.cors_origin}
+                  </div>
+                )}
+              </div>
+              <div style={{
+                display: 'flex',
+                borderTop: '1px solid var(--border-color-light)',
+              }}>
+                <Tooltip title="Edit">
+                  <div
+                    onClick={() => openEdit(app)}
+                    style={{
+                      flex: 1,
+                      padding: '10px',
+                      textAlign: 'center',
+                      cursor: 'pointer',
+                      color: 'var(--text-tertiary)',
+                      transition: 'all var(--transition-fast)',
+                      fontSize: 14,
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--color-primary)'; e.currentTarget.style.background = 'var(--bg-hover)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-tertiary)'; e.currentTarget.style.background = 'transparent'; }}
+                  >
+                    <EditOutlined />
+                  </div>
+                </Tooltip>
+                <div style={{ width: 1, background: 'var(--border-color-light)' }} />
+                <Popconfirm title="Delete this app?" onConfirm={() => handleDelete(app.id)}>
+                  <Tooltip title="Delete">
+                    <div
+                      style={{
+                        flex: 1,
+                        padding: '10px',
+                        textAlign: 'center',
+                        cursor: 'pointer',
+                        color: 'var(--text-tertiary)',
+                        transition: 'all var(--transition-fast)',
+                        fontSize: 14,
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--color-error)'; e.currentTarget.style.background = 'var(--color-error-bg)'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-tertiary)'; e.currentTarget.style.background = 'transparent'; }}
+                    >
+                      <DeleteOutlined />
+                    </div>
+                  </Tooltip>
+                </Popconfirm>
+              </div>
+            </div>
           ))}
-        </Row>
+        </div>
       )}
 
       <Modal
@@ -96,8 +195,9 @@ export default function Apps() {
         onOk={handleSave}
         onCancel={() => setModalOpen(false)}
         okText="Save"
+        destroyOnClose
       >
-        <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
+        <Form form={form} layout="vertical" style={{ marginTop: 8 }}>
           <Form.Item name="name" label="Name" rules={[{ required: true }]}>
             <Input placeholder="My App" />
           </Form.Item>
@@ -106,8 +206,8 @@ export default function Apps() {
           </Form.Item>
           <Row gutter={12}>
             <Col span={12}>
-              <Form.Item name="icon" label="Icon (emoji or URL)">
-                <Input placeholder="🤖" />
+              <Form.Item name="icon" label="Icon (emoji)">
+                <Input placeholder="e.g. your emoji here" />
               </Form.Item>
             </Col>
             <Col span={12}>
