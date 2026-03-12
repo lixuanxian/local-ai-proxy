@@ -109,11 +109,18 @@ export default function Dashboard() {
     return <DashboardSkeleton />;
   }
 
+  const totalTokens = (stats?.totalInputTokens || 0) + (stats?.totalOutputTokens || 0);
+  const formatTokens = (n) => {
+    if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
+    if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
+    return String(n);
+  };
+
   const statCards = [
     { label: 'Requests Today', value: stats?.today || 0, icon: <ThunderboltOutlined />, accent: 'primary', iconClass: 'primary' },
     { label: 'Total Requests', value: stats?.total || 0, icon: <ApiOutlined />, accent: 'info', iconClass: 'info' },
     { label: 'Avg Latency', value: stats?.avgLatency || 0, suffix: 'ms', icon: <ClockCircleOutlined />, accent: 'warning', iconClass: 'warning' },
-    { label: 'Active Providers', value: providers.filter(p => p.enabled).length, icon: <StarOutlined />, accent: 'success', iconClass: 'success' },
+    { label: 'Total Tokens', value: formatTokens(totalTokens), icon: <FieldTimeOutlined />, accent: 'success', iconClass: 'success' },
   ];
 
   const enabledProviders = providers.filter(p => p.enabled);

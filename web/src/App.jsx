@@ -49,11 +49,16 @@ export default function App() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('theme') !== 'light');
   const [info, setInfo] = useState(null);
+  const [healthy, setHealthy] = useState(true);
   const navigate = useNavigate();
   const location = useLocation();
 
   useEffect(() => {
-    api.getInfo().then(setInfo).catch(() => {});
+    api.getInfo().then((d) => { setInfo(d); setHealthy(true); }).catch(() => setHealthy(false));
+    const healthInterval = setInterval(() => {
+      api.getHealth().then(() => setHealthy(true)).catch(() => setHealthy(false));
+    }, 30000);
+    return () => clearInterval(healthInterval);
   }, []);
 
   useEffect(() => {
@@ -198,6 +203,10 @@ export default function App() {
               <span>Search...</span>
               <span className="kbd" style={{ fontSize: 9, padding: '1px 4px' }}>Ctrl+K</span>
             </div>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: healthy ? 'var(--color-success)' : 'var(--color-error)' }}>
+              <span className={`status-dot ${healthy ? 'online' : 'offline'}`} style={{ marginRight: 0 }} />
+              {healthy ? 'Healthy' : 'Offline'}
+            </span>
             {info && (
               <>
                 <span className="header-badge">
