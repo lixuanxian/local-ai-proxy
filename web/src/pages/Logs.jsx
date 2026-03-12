@@ -277,9 +277,23 @@ export default function Logs() {
         open={!!detailRecord}
         onCancel={() => setDetailRecord(null)}
         footer={
-          <Button icon={<CopyOutlined />} onClick={copyLogDetail}>
-            Copy as JSON
-          </Button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Button icon={<CopyOutlined />} onClick={copyLogDetail}>
+              Copy JSON
+            </Button>
+            <Button
+              onClick={() => {
+                if (!detailRecord) return;
+                let body = '';
+                try { body = typeof detailRecord.request_body === 'string' ? detailRecord.request_body : JSON.stringify(detailRecord.request_body); } catch { body = '{}'; }
+                const endpoint = detailRecord.api_format === 'anthropic' ? '/v1/messages' : '/v1/chat/completions';
+                const curl = `curl http://localhost:3199${endpoint} \\\n  -H "Content-Type: application/json" \\\n  -d '${body}'`;
+                navigator.clipboard.writeText(curl).then(() => message.success('cURL copied!'));
+              }}
+            >
+              Copy cURL
+            </Button>
+          </div>
         }
         width={680}
       >
@@ -309,6 +323,12 @@ export default function Logs() {
                 <label>Latency</label>
                 <span>{detailRecord.latency_ms}ms</span>
               </div>
+              {(detailRecord.input_tokens > 0 || detailRecord.output_tokens > 0) && (
+                <div className="log-detail-item">
+                  <label>Tokens</label>
+                  <span>{detailRecord.input_tokens || 0} in / {detailRecord.output_tokens || 0} out</span>
+                </div>
+              )}
             </div>
 
             {detailRecord.error && (
