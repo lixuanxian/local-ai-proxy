@@ -111,6 +111,7 @@ export default function Settings() {
           { keys: '6', desc: 'Go to Settings' },
           { keys: 't', desc: 'Toggle dark/light theme' },
           { keys: 'b', desc: 'Toggle sidebar' },
+          { keys: 'Ctrl+K', desc: 'Open command palette' },
         ].map((shortcut) => (
           <div key={shortcut.keys} className="settings-row">
             <div className="settings-row-label">{shortcut.desc}</div>
@@ -147,6 +148,44 @@ export default function Settings() {
                 Copy
               </Button>
             </Tooltip>
+          </div>
+        ))}
+      </div>
+
+      <div className="settings-section">
+        <div className="settings-section-title">Quick Start</div>
+        <div className="settings-section-desc">Example curl commands to test the proxy</div>
+
+        {[
+          {
+            label: 'OpenAI Chat',
+            cmd: `curl http://localhost:${settings?.port || 3199}/v1/chat/completions \\
+  -H "Content-Type: application/json" \\
+  -d '{"model": "auto", "messages": [{"role": "user", "content": "Hello!"}]}'`,
+          },
+          {
+            label: 'Anthropic Chat',
+            cmd: `curl http://localhost:${settings?.port || 3199}/v1/messages \\
+  -H "Content-Type: application/json" \\
+  -d '{"model": "auto", "messages": [{"role": "user", "content": "Hello!"}]}'`,
+          },
+        ].map((example) => (
+          <div key={example.label} style={{ marginBottom: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+              <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)' }}>{example.label}</span>
+              <Button
+                size="small"
+                onClick={() => {
+                  navigator.clipboard.writeText(example.cmd);
+                  message.success('Copied!');
+                }}
+              >
+                Copy
+              </Button>
+            </div>
+            <pre className="code-block" style={{ fontSize: 11.5, maxHeight: 100 }}>
+              {example.cmd}
+            </pre>
           </div>
         ))}
       </div>

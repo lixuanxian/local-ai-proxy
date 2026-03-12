@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
-import { Spin, Button, Switch, Tooltip, Tag } from 'antd';
+import { Button, Switch, Tooltip, Tag } from 'antd';
+import { DashboardSkeleton } from '../components/Skeleton';
 import {
   ThunderboltOutlined,
   ApiOutlined,
@@ -105,11 +106,7 @@ export default function Dashboard() {
   }, [autoRefresh]);
 
   if (loading) {
-    return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 400 }}>
-        <Spin size="large" />
-      </div>
-    );
+    return <DashboardSkeleton />;
   }
 
   const statCards = [
