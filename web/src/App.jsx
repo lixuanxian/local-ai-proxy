@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
-import { Menu, ConfigProvider, theme, Switch } from 'antd';
+import { Menu, ConfigProvider, theme, Button } from 'antd';
 import {
   DashboardOutlined,
   ApiOutlined,
@@ -11,6 +11,8 @@ import {
   MenuUnfoldOutlined,
   BulbOutlined,
   BulbFilled,
+  MenuOutlined,
+  SettingOutlined,
 } from '@ant-design/icons';
 import { api } from './api';
 import Dashboard from './pages/Dashboard';
@@ -18,6 +20,8 @@ import Providers from './pages/Providers';
 import Logs from './pages/Logs';
 import Apps from './pages/Apps';
 import Docker from './pages/Docker';
+import Settings from './pages/Settings';
+import NotFound from './pages/NotFound';
 
 const menuItems = [
   { key: '/', icon: <DashboardOutlined />, label: 'Dashboard' },
@@ -25,10 +29,21 @@ const menuItems = [
   { key: '/logs', icon: <FileTextOutlined />, label: 'Logs' },
   { key: '/apps', icon: <AppstoreOutlined />, label: 'Apps' },
   { key: '/docker', icon: <CloudServerOutlined />, label: 'Docker' },
+  { key: '/settings', icon: <SettingOutlined />, label: 'Settings' },
 ];
 
+const pageNames = {
+  '/': 'Dashboard',
+  '/providers': 'Providers',
+  '/logs': 'Logs',
+  '/apps': 'Apps',
+  '/docker': 'Docker',
+  '/settings': 'Settings',
+};
+
 export default function App() {
-  const [collapsed, setCollapsed] = useState(() => window.innerWidth < 900);
+  const [collapsed, setCollapsed] = useState(() => window.innerWidth < 1100);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('theme') !== 'light');
   const [info, setInfo] = useState(null);
   const navigate = useNavigate();
@@ -44,6 +59,49 @@ export default function App() {
     document.documentElement.setAttribute('data-theme', mode);
   }, [darkMode]);
 
+  // Close mobile menu on navigation
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [location.pathname]);
+
+  // Keyboard shortcuts
+  const handleKeyDown = useCallback((e) => {
+    // Don't trigger when typing in inputs
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+
+    if (e.altKey || e.ctrlKey || e.metaKey) return;
+
+    const shortcuts = {
+      'g': null, // prefix key
+      '1': '/',
+      '2': '/providers',
+      '3': '/logs',
+      '4': '/apps',
+      '5': '/docker',
+      '6': '/settings',
+    };
+
+    if (shortcuts[e.key] !== undefined && shortcuts[e.key] !== null) {
+      e.preventDefault();
+      navigate(shortcuts[e.key]);
+    }
+
+    if (e.key === 't') {
+      e.preventDefault();
+      setDarkMode(d => !d);
+    }
+
+    if (e.key === 'b') {
+      e.preventDefault();
+      setCollapsed(c => !c);
+    }
+  }, [navigate]);
+
+  useEffect(() => {
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleKeyDown]);
+
   const themeConfig = {
     algorithm: darkMode ? theme.darkAlgorithm : theme.defaultAlgorithm,
     token: {
@@ -56,38 +114,33 @@ export default function App() {
       colorBorderSecondary: darkMode ? '#1f1f23' : '#f0f0f4',
     },
     components: {
-      Table: {
-        borderRadius: 10,
-        headerBg: darkMode ? '#18181b' : '#ffffff',
-      },
-      Card: {
-        borderRadius: 10,
-      },
-      Modal: {
-        borderRadius: 14,
-      },
-      Button: {
-        borderRadius: 8,
-      },
+      Table: { borderRadius: 10, headerBg: darkMode ? '#18181b' : '#ffffff' },
+      Card: { borderRadius: 10 },
+      Modal: { borderRadius: 14 },
+      Button: { borderRadius: 8 },
     },
   };
 
+  const currentPage = pageNames[location.pathname] || '';
+
   return (
     <ConfigProvider theme={themeConfig}>
-      <div className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
+      {/* Mobile overlay */}
+      {mobileOpen && (
+        <div className="mobile-overlay" style={{ display: 'block' }} onClick={() => setMobileOpen(false)} />
+      )}
+
+      <div className={`sidebar ${collapsed ? 'collapsed' : ''} ${mobileOpen ? 'mobile-open' : ''}`}>
         <div className="sidebar-logo">
           <div className="sidebar-logo-icon">AI</div>
-          {!collapsed && (
+          {(!collapsed || mobileOpen) && (
             <div className="sidebar-logo-text">
               Local AI Proxy
               <span>v1.0</span>
             </div>
           )}
         </div>
-        <div
-          className="sidebar-collapse-btn"
-          onClick={() => setCollapsed(!collapsed)}
-        >
+        <div className="sidebar-collapse-btn" onClick={() => setCollapsed(!collapsed)}>
           {collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
         </div>
         <Menu
@@ -100,13 +153,23 @@ export default function App() {
         <div className="sidebar-footer">
           <div className="theme-switch" onClick={() => setDarkMode(!darkMode)}>
             {darkMode ? <BulbOutlined /> : <BulbFilled />}
-            {!collapsed && <span>{darkMode ? 'Dark' : 'Light'}</span>}
+            {(!collapsed || mobileOpen) && <span>{darkMode ? 'Dark' : 'Light'}</span>}
           </div>
         </div>
       </div>
 
       <div className={`main-layout ${collapsed ? 'sidebar-collapsed' : ''}`}>
         <div className="main-header">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div className="mobile-menu-btn" onClick={() => setMobileOpen(true)}>
+              <MenuOutlined />
+            </div>
+            <div className="breadcrumb">
+              <span>AI Proxy</span>
+              <span style={{ opacity: 0.3 }}>/</span>
+              <span className="breadcrumb-current">{currentPage}</span>
+            </div>
+          </div>
           <div className="header-info">
             {info && (
               <>
@@ -114,16 +177,11 @@ export default function App() {
                   <ApiOutlined />
                   {info.providers?.length || 0} providers
                 </span>
-                <span style={{ color: 'var(--text-tertiary)' }}>
-                  Default: <strong style={{ color: 'var(--text-primary)' }}>{info.default_provider}</strong>
+                <span style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>
+                  :{info?.port || 3199}
                 </span>
               </>
             )}
-          </div>
-          <div className="header-info">
-            <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
-              Port {info?.port || 3199}
-            </span>
           </div>
         </div>
         <div className="main-content">
@@ -133,6 +191,8 @@ export default function App() {
             <Route path="/logs" element={<Logs />} />
             <Route path="/apps" element={<Apps />} />
             <Route path="/docker" element={<Docker />} />
+            <Route path="/settings" element={<Settings />} />
+            <Route path="*" element={<NotFound />} />
           </Routes>
         </div>
       </div>
