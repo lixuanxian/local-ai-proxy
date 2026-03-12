@@ -1213,3 +1213,114 @@ body {
   letter-spacing: 0.5px;
   margin-bottom: 12px;
 }
+
+/* --- Staggered card entrance --- */
+.grid > *:nth-child(1) { animation: slideUp 0.3s ease forwards; animation-delay: 0s; }
+.grid > *:nth-child(2) { animation: slideUp 0.3s ease forwards; animation-delay: 0.04s; }
+.grid > *:nth-child(3) { animation: slideUp 0.3s ease forwards; animation-delay: 0.08s; }
+.grid > *:nth-child(4) { animation: slideUp 0.3s ease forwards; animation-delay: 0.12s; }
+.grid > *:nth-child(5) { animation: slideUp 0.3s ease forwards; animation-delay: 0.16s; }
+.grid > *:nth-child(6) { animation: slideUp 0.3s ease forwards; animation-delay: 0.2s; }
+.grid > *:nth-child(n+7) { animation: slideUp 0.3s ease forwards; animation-delay: 0.24s; }
+
+/* --- Active/pressed states --- */
+.ant-btn:active {
+  transform: scale(0.97) !important;
+}
+
+.provider-card:active,
+.card:active {
+  transform: scale(0.99);
+}
+
+/* --- Tooltip upgrade --- */
+.ant-tooltip .ant-tooltip-inner {
+  border-radius: var(--radius-sm) !important;
+  font-size: 12px !important;
+  padding: 6px 10px !important;
+}
+
+/* --- Smooth page content transition --- */
+.main-content {
+  animation: fadeIn 0.2s ease;
+}
+
+/* --- Badge pulse for live indicators --- */
+@keyframes gentlePulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.3); }
+  50% { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+}
+
+.status-dot.online.pulse {
+  animation: gentlePulse 2s ease-in-out infinite;
+}
+
+/* --- Improved empty state --- */
+.empty-state {
+  background: var(--bg-card);
+  border: 2px dashed var(--border-color);
+  border-radius: var(--radius-lg);
+  animation: fadeIn 0.4s ease;
+}
+
+/* --- Code block scrollbar --- */
+.code-block::-webkit-scrollbar {
+  height: 4px;
+}
+.code-block::-webkit-scrollbar-thumb {
+  background: var(--text-tertiary);
+  border-radius: 2px;
+}
+
+/* --- Select dropdown styling --- */
+select {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  padding-right: 24px !important;
+}
+
+select:focus {
+  border-color: var(--color-primary) !important;
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-primary-bg);
+}
+
+/* --- Better link hover in tables --- */
+.ant-table-wrapper .ant-table-tbody > tr {
+  transition: background var(--transition-fast);
+}
+
+/* --- Ant Design Switch --- */
+.ant-switch {
+  min-width: 40px !important;
+}
+
+/* --- Improved card grid for 4-column (apps) --- */
+@media (max-width: 480px) {
+  .main-header {
+    padding: 0 12px;
+  }
+  .main-content {
+    padding: 12px;
+  }
+  .page-header h2 {
+    font-size: 18px;
+  }
+  .stat-card {
+    padding: 14px;
+  }
+  .stat-card-value {
+    font-size: 20px;
+  }
+  .settings-section {
+    padding: 16px;
+  }
+  .header-info .kbd,
+  .header-info span:last-child {
+    display: none;
+  }
+}
