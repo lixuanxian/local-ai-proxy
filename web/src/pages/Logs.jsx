@@ -1,8 +1,9 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { Table, Button, Switch, Tag, Space, Input, Modal, message, Popconfirm, Tooltip } from 'antd';
 import {
   DeleteOutlined,
   ReloadOutlined,
+  SyncOutlined,
   ThunderboltOutlined,
   ClockCircleOutlined,
   WarningOutlined,
@@ -33,6 +34,8 @@ export default function Logs() {
   const [loggingEnabled, setLoggingEnabled] = useState(true);
   const [filters, setFilters] = useState({ page: 1, limit: 30, provider: '', search: '', status: '' });
   const [detailRecord, setDetailRecord] = useState(null);
+  const [autoRefresh, setAutoRefresh] = useState(false);
+  const refreshRef = useRef(null);
 
   const load = useCallback(async (params) => {
     setLoading(true);
@@ -49,6 +52,15 @@ export default function Logs() {
     load();
     api.getSettings().then((s) => setLoggingEnabled(s.logging_enabled === 'true')).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (autoRefresh) {
+      refreshRef.current = setInterval(() => load(), 10000);
+    } else {
+      clearInterval(refreshRef.current);
+    }
+    return () => clearInterval(refreshRef.current);
+  }, [autoRefresh, load]);
 
   const toggleLogging = async (checked) => {
     await api.setSetting('logging_enabled', String(checked));
@@ -161,6 +173,16 @@ export default function Logs() {
           </div>
         </div>
         <Space>
+          <Tooltip title={autoRefresh ? 'Auto-refreshing every 10s' : 'Enable auto-refresh'}>
+            <Button
+              size="small"
+              icon={<SyncOutlined spin={autoRefresh} />}
+              type={autoRefresh ? 'primary' : 'default'}
+              onClick={() => setAutoRefresh(v => !v)}
+            >
+              {autoRefresh ? 'Live' : 'Auto'}
+            </Button>
+          </Tooltip>
           <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Logging:</span>
           <Switch checked={loggingEnabled} onChange={toggleLogging} size="small" />
           <Popconfirm title="Clear all logs?" onConfirm={clearAll}>
