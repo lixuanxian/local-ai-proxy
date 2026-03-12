@@ -8,13 +8,13 @@ import {
   LinkOutlined,
   ReloadOutlined,
   AppstoreOutlined,
-  CheckCircleOutlined,
-  CloseCircleOutlined,
   SyncOutlined,
   DesktopOutlined,
   CloudOutlined,
   CodeOutlined,
   RobotOutlined,
+  BarChartOutlined,
+  FieldTimeOutlined,
 } from '@ant-design/icons';
 import { api } from '../api';
 
@@ -34,11 +34,26 @@ const typeColors = {
   'gemini-api': '#ef4444',
 };
 
+function formatUptime(seconds) {
+  if (!seconds) return '0s';
+  const d = Math.floor(seconds / 86400);
+  const h = Math.floor((seconds % 86400) / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const parts = [];
+  if (d > 0) parts.push(`${d}d`);
+  if (h > 0) parts.push(`${h}h`);
+  if (m > 0) parts.push(`${m}m`);
+  if (parts.length === 0) parts.push(`${seconds}s`);
+  return parts.join(' ');
+}
+
 export default function Dashboard() {
   const [stats, setStats] = useState(null);
   const [info, setInfo] = useState(null);
   const [apps, setApps] = useState([]);
   const [providers, setProviders] = useState([]);
+  const [hourlyStats, setHourlyStats] = useState([]);
+  const [providerStats, setProviderStats] = useState([]);
   const [loading, setLoading] = useState(true);
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [countdown, setCountdown] = useState(30);
@@ -46,9 +61,23 @@ export default function Dashboard() {
   const countdownRef = useRef(null);
 
   const load = () => {
-    const promises = [api.getLogStats(), api.getInfo(), api.getApps(), api.getProviders()];
+    const promises = [
+      api.getLogStats(),
+      api.getInfo(),
+      api.getApps(),
+      api.getProviders(),
+      api.getHourlyStats().catch(() => []),
+      api.getProviderStats().catch(() => []),
+    ];
     Promise.all(promises)
-      .then(([s, i, a, p]) => { setStats(s); setInfo(i); setApps(a); setProviders(p); })
+      .then(([s, i, a, p, hs, ps]) => {
+        setStats(s);
+        setInfo(i);
+        setApps(a);
+        setProviders(p);
+        setHourlyStats(hs);
+        setProviderStats(ps);
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
   };
@@ -84,38 +113,15 @@ export default function Dashboard() {
   }
 
   const statCards = [
-    {
-      label: 'Requests Today',
-      value: stats?.today || 0,
-      icon: <ThunderboltOutlined />,
-      accent: 'primary',
-      iconClass: 'primary',
-    },
-    {
-      label: 'Total Requests',
-      value: stats?.total || 0,
-      icon: <ApiOutlined />,
-      accent: 'info',
-      iconClass: 'info',
-    },
-    {
-      label: 'Avg Latency',
-      value: stats?.avgLatency || 0,
-      suffix: 'ms',
-      icon: <ClockCircleOutlined />,
-      accent: 'warning',
-      iconClass: 'warning',
-    },
-    {
-      label: 'Active Providers',
-      value: providers.filter(p => p.enabled).length,
-      icon: <StarOutlined />,
-      accent: 'success',
-      iconClass: 'success',
-    },
+    { label: 'Requests Today', value: stats?.today || 0, icon: <ThunderboltOutlined />, accent: 'primary', iconClass: 'primary' },
+    { label: 'Total Requests', value: stats?.total || 0, icon: <ApiOutlined />, accent: 'info', iconClass: 'info' },
+    { label: 'Avg Latency', value: stats?.avgLatency || 0, suffix: 'ms', icon: <ClockCircleOutlined />, accent: 'warning', iconClass: 'warning' },
+    { label: 'Active Providers', value: providers.filter(p => p.enabled).length, icon: <StarOutlined />, accent: 'success', iconClass: 'success' },
   ];
 
   const enabledProviders = providers.filter(p => p.enabled);
+  const maxHourly = Math.max(...hourlyStats.map(h => h.count), 1);
+  const maxProviderCount = Math.max(...providerStats.map(p => p.count), 1);
 
   return (
     <div className="animate-fade-in">
@@ -128,6 +134,12 @@ export default function Dashboard() {
             </p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            {info?.uptime && (
+              <span className="uptime-badge">
+                <span className="status-dot online pulse" />
+                Up {formatUptime(info.uptime)}
+              </span>
+            )}
             <Tooltip title={autoRefresh ? `Refreshing in ${countdown}s` : 'Enable auto-refresh'}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--text-secondary)' }}>
                 {autoRefresh && (
@@ -146,9 +158,10 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="grid grid-4" style={{ marginBottom: 28 }}>
+      {/* Stat Cards */}
+      <div className="grid grid-4" style={{ marginBottom: 24 }}>
         {statCards.map((card, i) => (
-          <div key={card.label} className={`stat-card accent-${card.accent}`} style={{ animationDelay: `${i * 0.05}s` }}>
+          <div key={card.label} className={`stat-card accent-${card.accent}`}>
             <div className={`stat-card-icon ${card.iconClass}`}>
               {card.icon}
             </div>
@@ -159,6 +172,63 @@ export default function Dashboard() {
             </div>
           </div>
         ))}
+      </div>
+
+      {/* Charts Row */}
+      <div className="grid grid-2" style={{ marginBottom: 28 }}>
+        {/* Hourly Request Chart */}
+        <div className="chart-card">
+          <div className="chart-card-title">
+            <BarChartOutlined style={{ marginRight: 6 }} />
+            Requests (Last 24h)
+          </div>
+          {hourlyStats.length === 0 ? (
+            <div style={{ height: 120, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-tertiary)', fontSize: 13 }}>
+              No data yet
+            </div>
+          ) : (
+            <>
+              <div className="bar-chart">
+                {hourlyStats.map((h, i) => (
+                  <Tooltip key={i} title={`${h.hour?.slice(11, 16)}: ${h.count} requests, ${h.errors} errors`}>
+                    <div
+                      className={`bar-chart-bar ${h.errors > 0 ? 'error' : ''}`}
+                      style={{ height: `${(h.count / maxHourly) * 100}%` }}
+                    />
+                  </Tooltip>
+                ))}
+              </div>
+              <div className="bar-chart-labels">
+                {hourlyStats.map((h, i) => (
+                  <span key={i}>{i % 4 === 0 ? h.hour?.slice(11, 16) : ''}</span>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Provider Stats */}
+        <div className="chart-card">
+          <div className="chart-card-title">
+            <ApiOutlined style={{ marginRight: 6 }} />
+            Requests by Provider
+          </div>
+          {providerStats.length === 0 ? (
+            <div style={{ height: 120, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-tertiary)', fontSize: 13 }}>
+              No data yet
+            </div>
+          ) : (
+            providerStats.map((p) => (
+              <div key={p.provider_id} className="h-bar">
+                <div className="h-bar-label">{p.provider_id}</div>
+                <div className="h-bar-track">
+                  <div className="h-bar-fill" style={{ width: `${(p.count / maxProviderCount) * 100}%` }} />
+                </div>
+                <div className="h-bar-value">{p.count}</div>
+              </div>
+            ))
+          )}
+        </div>
       </div>
 
       {/* Provider Overview */}
@@ -226,7 +296,7 @@ export default function Dashboard() {
       </div>
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+        gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
         gap: 12,
         marginBottom: 28,
       }}>
@@ -235,6 +305,7 @@ export default function Dashboard() {
           { label: 'Default Provider', value: info?.default_provider || '-' },
           { label: 'Total Providers', value: providers.length },
           { label: 'Total Errors', value: stats?.errors || 0 },
+          { label: 'Uptime', value: formatUptime(info?.uptime) },
         ].map((item) => (
           <div key={item.label} style={{
             padding: '12px 16px',
@@ -267,7 +338,7 @@ export default function Dashboard() {
         </div>
       ) : (
         <div className="grid grid-4">
-          {apps.map((app, i) => (
+          {apps.map((app) => (
             <div
               key={app.id}
               className="app-card"

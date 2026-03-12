@@ -1,6 +1,6 @@
 const { Router } = require("express");
 const config = require("../../lib/config");
-const { queryLogs, getStats, clearLogs } = require("../../lib/logger");
+const { queryLogs, getStats, getHourlyStats, getProviderStats, clearLogs } = require("../../lib/logger");
 const docker = require("../../lib/docker");
 
 module.exports = function createManagementRouter(providerRegistry) {
@@ -122,6 +122,14 @@ module.exports = function createManagementRouter(providerRegistry) {
 
   router.get("/api/logs/stats", (req, res) => {
     res.json(getStats());
+  });
+
+  router.get("/api/logs/stats/hourly", (req, res) => {
+    res.json(getHourlyStats());
+  });
+
+  router.get("/api/logs/stats/providers", (req, res) => {
+    res.json(getProviderStats());
   });
 
   router.delete("/api/logs", (req, res) => {

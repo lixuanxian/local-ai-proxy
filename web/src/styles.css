@@ -1092,3 +1092,124 @@ body {
   background: rgba(99, 102, 241, 0.2);
   color: var(--text-primary);
 }
+
+/* --- Bar Chart --- */
+.bar-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 120px;
+  padding: 8px 0;
+}
+
+.bar-chart-bar {
+  flex: 1;
+  min-width: 0;
+  border-radius: 3px 3px 0 0;
+  background: var(--gradient-primary);
+  transition: all var(--transition-normal);
+  cursor: pointer;
+  position: relative;
+  min-height: 2px;
+  opacity: 0.7;
+}
+
+.bar-chart-bar:hover {
+  opacity: 1;
+  transform: scaleY(1.05);
+  transform-origin: bottom;
+}
+
+.bar-chart-bar.error {
+  background: var(--gradient-error);
+}
+
+.bar-chart-labels {
+  display: flex;
+  gap: 3px;
+  margin-top: 4px;
+}
+
+.bar-chart-labels span {
+  flex: 1;
+  font-size: 9px;
+  color: var(--text-tertiary);
+  text-align: center;
+  overflow: hidden;
+}
+
+/* --- Horizontal Bar --- */
+.h-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 0;
+}
+
+.h-bar-label {
+  min-width: 80px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.h-bar-track {
+  flex: 1;
+  height: 8px;
+  background: var(--border-color-light);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.h-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--gradient-primary);
+  transition: width 0.5s ease;
+}
+
+.h-bar-value {
+  min-width: 40px;
+  text-align: right;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+}
+
+/* --- Uptime Badge --- */
+.uptime-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  background: var(--color-success-bg);
+  color: var(--color-success);
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.uptime-badge .status-dot {
+  margin-right: 0;
+}
+
+/* --- Chart Card --- */
+.chart-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 20px;
+  box-shadow: var(--shadow-card);
+}
+
+.chart-card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 12px;
+}
