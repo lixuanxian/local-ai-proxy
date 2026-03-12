@@ -13,6 +13,7 @@ import {
   BulbFilled,
   MenuOutlined,
   SettingOutlined,
+  SearchOutlined,
 } from '@ant-design/icons';
 import { api } from './api';
 import Dashboard from './pages/Dashboard';
@@ -22,6 +23,7 @@ import Apps from './pages/Apps';
 import Docker from './pages/Docker';
 import Settings from './pages/Settings';
 import NotFound from './pages/NotFound';
+import CommandPalette from './components/CommandPalette';
 
 const menuItems = [
   { key: '/', icon: <DashboardOutlined />, label: 'Dashboard' },
@@ -125,6 +127,8 @@ export default function App() {
 
   return (
     <ConfigProvider theme={themeConfig}>
+      <CommandPalette onToggleTheme={() => setDarkMode(d => !d)} />
+
       {/* Mobile overlay */}
       {mobileOpen && (
         <div className="mobile-overlay" style={{ display: 'block' }} onClick={() => setMobileOpen(false)} />
@@ -171,6 +175,27 @@ export default function App() {
             </div>
           </div>
           <div className="header-info">
+            <div
+              onClick={() => {
+                window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }));
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '4px 12px',
+                border: '1px solid var(--border-color)',
+                borderRadius: 'var(--radius-sm)',
+                cursor: 'pointer',
+                color: 'var(--text-tertiary)',
+                fontSize: 12,
+                transition: 'all var(--transition-fast)',
+              }}
+            >
+              <SearchOutlined style={{ fontSize: 12 }} />
+              <span>Search...</span>
+              <span className="kbd" style={{ fontSize: 9, padding: '1px 4px' }}>Ctrl+K</span>
+            </div>
             {info && (
               <>
                 <span className="header-badge">
