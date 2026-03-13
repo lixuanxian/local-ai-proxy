@@ -1,6 +1,6 @@
 const https = require("https");
 const { EventEmitter } = require("events");
-const { makeResponse } = require("../lib/utils");
+const { makeResponse, toGeminiContents } = require("../lib/utils");
 
 /**
  * Google AI Studio (Gemini) API provider.
@@ -17,20 +17,7 @@ class GeminiAPIProvider {
   async chat(messages, options = {}) {
     const model = options.model || this.defaultModel;
 
-    // Convert to Gemini format
-    const contents = [];
-    let systemInstruction;
-
-    for (const msg of messages) {
-      if (msg.role === "system") {
-        systemInstruction = { parts: [{ text: msg.content }] };
-        continue;
-      }
-      contents.push({
-        role: msg.role === "assistant" ? "model" : "user",
-        parts: [{ text: msg.content }],
-      });
-    }
+    const { contents, systemInstruction } = toGeminiContents(messages);
 
     const body = JSON.stringify({
       contents,
@@ -69,19 +56,7 @@ class GeminiAPIProvider {
   chatStream(messages, options = {}) {
     const model = options.model || this.defaultModel;
 
-    const contents = [];
-    let systemInstruction;
-
-    for (const msg of messages) {
-      if (msg.role === "system") {
-        systemInstruction = { parts: [{ text: msg.content }] };
-        continue;
-      }
-      contents.push({
-        role: msg.role === "assistant" ? "model" : "user",
-        parts: [{ text: msg.content }],
-      });
-    }
+    const { contents, systemInstruction } = toGeminiContents(messages);
 
     const body = JSON.stringify({
       contents,

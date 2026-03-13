@@ -33,11 +33,25 @@ class BaseAPIProvider {
     return url.protocol === "https:" ? https : http;
   }
 
+  _buildUrl(path) {
+    const base = this.baseUrl.replace(/\/+$/, "");
+    // If baseUrl path and endpoint path overlap (e.g. base="/v1", path="/v1/chat/completions"),
+    // strip the overlapping prefix to avoid duplication like "/v1/v1/chat/completions"
+    const baseObj = new URL(base);
+    const basePath = baseObj.pathname.replace(/\/+$/, "");
+    if (basePath !== "" && path.startsWith(basePath)) {
+      return new URL(`${baseObj.origin}${path}`);
+    }
+    return new URL(`${base}${path}`);
+  }
+
   async chat(messages, options = {}) {
-    const model = options.model;
+    const model = (options.model && options.model !== 'auto') ? options.model : undefined;
     const body = JSON.stringify(this._buildBody(messages, model, false));
-    const url = new URL(this.chatPath, this.baseUrl);
+    const url = this._buildUrl(this.chatPath);
     const transport = this._getTransport(url);
+
+    console.log(`[API:${this.name}] POST ${url.href} model=${model}`);
 
     return new Promise((resolve, reject) => {
       const headers = { "Content-Type": "application/json" };
@@ -47,6 +61,10 @@ class BaseAPIProvider {
         let data = "";
         res.on("data", (chunk) => (data += chunk));
         res.on("end", () => {
+          console.log(`[API:${this.name}] status=${res.statusCode}, body=${data.slice(0, 300)}`);
+          if (res.statusCode >= 400) {
+            return reject(new Error(`${this.name} returned HTTP ${res.statusCode}: ${data.slice(0, 300)}`));
+          }
           try {
             const parsed = JSON.parse(data);
             const result = this._parseResponse(parsed);
@@ -72,10 +90,12 @@ class BaseAPIProvider {
   }
 
   chatStream(messages, options = {}) {
-    const model = options.model;
+    const model = (options.model && options.model !== 'auto') ? options.model : undefined;
     const body = JSON.stringify(this._buildBody(messages, model, true));
-    const url = new URL(this.chatPath, this.baseUrl);
+    const url = this._buildUrl(this.chatPath);
     const transport = this._getTransport(url);
+
+    console.log(`[API:${this.name}] stream POST ${url.href} model=${model}`);
 
     const headers = { "Content-Type": "application/json" };
     if (this.apiKey) headers["Authorization"] = `Bearer ${this.apiKey}`;

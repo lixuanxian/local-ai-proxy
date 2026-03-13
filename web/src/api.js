@@ -41,35 +41,37 @@ export const api = {
   clearLogs: () => request('/api/logs', { method: 'DELETE' }),
 
   // Apps
+  getAllAppsUnified: () => request('/api/apps/all'),
   getApps: () => request('/api/apps'),
   createApp: (data) => request('/api/apps', { method: 'POST', body: data }),
   updateApp: (id, data) => request(`/api/apps/${id}`, { method: 'PUT', body: data }),
   deleteApp: (id) => request(`/api/apps/${id}`, { method: 'DELETE' }),
+  fetchAppMeta: (id) => request(`/api/apps/${id}/fetch-meta`, { method: 'POST' }),
   reorderApps: (ids) => request('/api/apps/reorder', { method: 'PUT', body: { ids } }),
 
-  // Docker
-  getDockerConfigs: () => request('/api/docker/configs'),
-  createDockerConfig: (data) => request('/api/docker/configs', { method: 'POST', body: data }),
-  updateDockerConfig: (id, data) => request(`/api/docker/configs/${id}`, { method: 'PUT', body: data }),
-  deleteDockerConfig: (id) => request(`/api/docker/configs/${id}`, { method: 'DELETE' }),
-  getDockerStatus: () => request('/api/docker/status'),
-  testDocker: () => request('/api/docker/test', { method: 'POST' }),
-
-  // Docker Sandboxes
-  getSandboxes: () => request('/api/docker/sandboxes'),
-  startSandbox: (configId) => request(`/api/docker/sandboxes/${configId}/start`, { method: 'POST' }),
-  stopSandbox: (configId) => request(`/api/docker/sandboxes/${configId}/stop`, { method: 'POST' }),
-  getSandboxStatus: (configId) => request(`/api/docker/sandboxes/${configId}/status`),
-  execInSandbox: (configId, command) => request(`/api/docker/sandboxes/${configId}/exec`, { method: 'POST', body: { command } }),
-  getSandboxLogs: (configId, tail) => request(`/api/docker/sandboxes/${configId}/logs?tail=${tail || 100}`),
-  pullImage: (configId) => request(`/api/docker/configs/${configId}/pull`, { method: 'POST' }),
+  // CORS Origins
+  getCorsOrigins: () => request('/api/cors'),
+  getCorsOriginsPending: () => request('/api/cors/pending'),
+  updateCorsOrigin: (id, status) => request(`/api/cors/${id}`, { method: 'PUT', body: { status } }),
+  deleteCorsOrigin: (id) => request(`/api/cors/${id}`, { method: 'DELETE' }),
+  fetchCorsOriginMeta: (id) => request(`/api/cors/${id}/fetch-meta`, { method: 'POST' }),
 
   // Conversations
   getConversations: (search) => request(`/api/conversations${search ? `?search=${encodeURIComponent(search)}` : ''}`),
   createConversation: (data) => request('/api/conversations', { method: 'POST', body: data }),
-  getConversation: (id) => request(`/api/conversations/${id}`),
+  getConversation: (id, { limit, before } = {}) => {
+    const params = new URLSearchParams();
+    if (limit) params.set('limit', limit);
+    if (before) params.set('before', before);
+    const qs = params.toString();
+    return request(`/api/conversations/${id}${qs ? `?${qs}` : ''}`);
+  },
   updateConversation: (id, data) => request(`/api/conversations/${id}`, { method: 'PUT', body: data }),
   deleteConversation: (id) => request(`/api/conversations/${id}`, { method: 'DELETE' }),
+
+  // Context / compression
+  getContextInfo: (convId) => request(`/api/conversations/${convId}/context`),
+  compressConversation: (convId) => request(`/api/conversations/${convId}/compress`, { method: 'POST' }),
 
   // Chat messages (non-streaming)
   sendMessage: (convId, data) => request(`/api/conversations/${convId}/messages`, { method: 'POST', body: data }),
@@ -89,6 +91,13 @@ export const api = {
   createSkill: (data) => request('/api/skills', { method: 'POST', body: data }),
   updateSkill: (id, data) => request(`/api/skills/${id}`, { method: 'PUT', body: data }),
   deleteSkill: (id) => request(`/api/skills/${id}`, { method: 'DELETE' }),
+  importSkills: (url) => request('/api/skills/import', { method: 'POST', body: { url } }),
+
+  // API Tokens
+  getTokens: () => request('/api/tokens'),
+  createToken: (data) => request('/api/tokens', { method: 'POST', body: data }),
+  updateToken: (id, data) => request(`/api/tokens/${id}`, { method: 'PUT', body: data }),
+  deleteToken: (id) => request(`/api/tokens/${id}`, { method: 'DELETE' }),
 
   // File upload
   uploadFile: async (file) => {

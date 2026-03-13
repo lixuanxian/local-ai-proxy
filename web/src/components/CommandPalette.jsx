@@ -5,7 +5,6 @@ import {
   ApiOutlined,
   FileTextOutlined,
   AppstoreOutlined,
-  CloudServerOutlined,
   SettingOutlined,
   BulbOutlined,
   SearchOutlined,
@@ -18,7 +17,6 @@ const commands = [
   { id: 'providers', label: 'Go to Providers', icon: <ApiOutlined />, path: '/providers', keywords: 'api connection model' },
   { id: 'logs', label: 'Go to Logs', icon: <FileTextOutlined />, path: '/logs', keywords: 'request response debug' },
   { id: 'apps', label: 'Go to Apps', icon: <AppstoreOutlined />, path: '/apps', keywords: 'links bookmarks cors' },
-  { id: 'docker', label: 'Go to Docker', icon: <CloudServerOutlined />, path: '/docker', keywords: 'sandbox container' },
   { id: 'settings', label: 'Go to Settings', icon: <SettingOutlined />, path: '/settings', keywords: 'config port logging' },
   { id: 'theme', label: 'Toggle Theme', icon: <BulbOutlined />, action: 'toggle-theme', keywords: 'dark light mode' },
 ];

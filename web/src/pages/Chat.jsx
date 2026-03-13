@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Input, Button, Select, Checkbox, Upload, Tooltip, Empty, Popconfirm, Dropdown, Badge, message, Spin, Drawer, Slider, InputNumber } from 'antd';
+import { useParams, useNavigate } from 'react-router-dom';
+import { Input, Button, Select, Tooltip, Popconfirm, message, Spin, Drawer, Slider, InputNumber, AutoComplete, Switch, Tabs, Image } from 'antd';
 import {
   SendOutlined,
   PlusOutlined,
@@ -9,22 +10,34 @@ import {
   SearchOutlined,
   MessageOutlined,
   RobotOutlined,
-  UserOutlined,
   CheckOutlined,
   CloseOutlined,
   CopyOutlined,
   ThunderboltOutlined,
   FileTextOutlined,
+  FilePdfOutlined,
   FileImageOutlined,
-  DownOutlined,
+  FileZipOutlined,
+  FileExcelOutlined,
+  FileWordOutlined,
+  FileUnknownOutlined,
+  EyeOutlined,
   BulbOutlined,
   FormOutlined,
   SettingOutlined,
   ExperimentOutlined,
+  AppstoreOutlined,
+  CloudDownloadOutlined,
+  LinkOutlined,
+  DownloadOutlined,
+  CompressOutlined,
+  DatabaseOutlined,
+  InfoCircleOutlined,
 } from '@ant-design/icons';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { api } from '../api';
+import { buildModelOptions } from '../provider-config.jsx';
 
 const { TextArea } = Input;
 
@@ -38,14 +51,45 @@ const PRESET_ROLES = [
   { label: 'Creative Writer', value: 'You are a creative writing assistant. Help with storytelling, world-building, character development, dialogue, and creative expression. Be imaginative and inspiring.', description: 'Stories & creativity' },
 ];
 
+const SKILL_STORE = [
+  { category: 'Code', items: [
+    { name: 'Code Review', description: 'Analyze code quality, find bugs, suggest improvements', prompt_template: 'Please review the following code. Identify bugs, potential issues, security concerns, and suggest improvements:\n\n' },
+    { name: 'Write Tests', description: 'Generate comprehensive unit tests', prompt_template: 'Please write comprehensive unit tests for the following code. Cover edge cases and important scenarios:\n\n' },
+    { name: 'Refactor', description: 'Improve code structure and readability', prompt_template: 'Please refactor the following code to improve readability, performance, and maintainability. Explain your changes:\n\n' },
+    { name: 'Debug', description: 'Help identify and fix bugs', prompt_template: 'Please help debug the following code. Identify the issue, explain why it occurs, and provide a fix:\n\n' },
+    { name: 'Document', description: 'Generate code documentation and comments', prompt_template: 'Please generate clear documentation for the following code. Include function descriptions, parameter explanations, and usage examples:\n\n' },
+    { name: 'Convert Language', description: 'Convert code between programming languages', prompt_template: 'Please convert the following code to the target language. Maintain the same logic and use idiomatic patterns in the target language:\n\n' },
+  ]},
+  { category: 'Writing', items: [
+    { name: 'Summarize', description: 'Condense long text into key points', prompt_template: 'Please provide a concise summary of the following text, highlighting the key points:\n\n' },
+    { name: 'Translate', description: 'Translate text between languages', prompt_template: 'Please translate the following text. If no target language is specified, translate to English. Preserve the original tone and meaning:\n\n' },
+    { name: 'Proofread', description: 'Fix grammar, spelling, and style', prompt_template: 'Please proofread the following text. Fix grammar, spelling, punctuation, and improve clarity while preserving the original voice:\n\n' },
+    { name: 'Rewrite', description: 'Rewrite text in a different tone or style', prompt_template: 'Please rewrite the following text to improve clarity and flow. If a target style/tone is specified, adapt accordingly:\n\n' },
+    { name: 'Expand', description: 'Elaborate on brief notes or outlines', prompt_template: 'Please expand on the following notes/outline into well-structured, detailed content:\n\n' },
+  ]},
+  { category: 'Analysis', items: [
+    { name: 'Explain Concept', description: 'Break down complex topics simply', prompt_template: 'Please explain the following concept in simple terms. Use analogies and examples to make it easy to understand:\n\n' },
+    { name: 'Compare', description: 'Compare and contrast options', prompt_template: 'Please compare and contrast the following items. List pros, cons, key differences, and provide a recommendation:\n\n' },
+    { name: 'Extract Data', description: 'Extract structured data from text', prompt_template: 'Please extract the key data points from the following text and organize them in a structured format (table or list):\n\n' },
+    { name: 'SQL Query', description: 'Generate SQL from natural language', prompt_template: 'Please write an SQL query based on the following requirements. Include comments explaining the query logic:\n\n' },
+  ]},
+  { category: 'Productivity', items: [
+    { name: 'Email Draft', description: 'Draft professional emails', prompt_template: 'Please draft a professional email based on the following context. Keep it concise and appropriate in tone:\n\n' },
+    { name: 'Meeting Notes', description: 'Structure meeting notes with action items', prompt_template: 'Please organize the following meeting notes into a clear structure with: summary, key decisions, action items (with owners), and follow-ups:\n\n' },
+    { name: 'TODO List', description: 'Break tasks into actionable steps', prompt_template: 'Please break down the following goal/task into a prioritized, actionable TODO list with estimated effort for each item:\n\n' },
+  ]},
+];
+
 export default function Chat() {
+  const { conversationId: urlConvId } = useParams();
+  const navigate = useNavigate();
+
   // State
   const [conversations, setConversations] = useState([]);
-  const [activeConvId, setActiveConvId] = useState(null);
+  const [activeConvId, setActiveConvId] = useState(urlConvId || null);
   const [activeConv, setActiveConv] = useState(null);
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
-  const [loading, setLoading] = useState(false);
   const [streaming, setStreaming] = useState(false);
   const [providers, setProviders] = useState([]);
   const [skills, setSkills] = useState([]);
@@ -63,15 +107,34 @@ export default function Chat() {
   const [systemPrompt, setSystemPrompt] = useState('');
   const [temperature, setTemperature] = useState(null);
   const [maxTokens, setMaxTokens] = useState(null);
-
+  const [skillsManagerOpen, setSkillsManagerOpen] = useState(false);
+  const [editingSkill, setEditingSkill] = useState(null);
+  const [newSkillName, setNewSkillName] = useState('');
+  const [newSkillPrompt, setNewSkillPrompt] = useState('');
+  const [dragOver, setDragOver] = useState(false);
+  const [hasMoreMessages, setHasMoreMessages] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [contextInfo, setContextInfo] = useState(null);
+  const [compressing, setCompressing] = useState(false);
+  const [contextLimit, setContextLimit] = useState(10);
+  const [autoCompress, setAutoCompress] = useState(true);
   const messagesEndRef = useRef(null);
+  const messagesContainerRef = useRef(null);
   const inputRef = useRef(null);
   const fileInputRef = useRef(null);
 
   // Load conversations, providers, skills
   useEffect(() => {
     loadConversations();
-    api.getProviders().then(setProviders).catch(() => {});
+    api.getProviders().then(data => {
+      setProviders(data);
+      // Set default provider and model if none selected
+      const defaultProv = data.find(p => p.is_default && p.enabled) || data.find(p => p.enabled);
+      if (defaultProv && !selectedProvider) {
+        setSelectedProvider(defaultProv.id);
+        if (defaultProv.default_model) setSelectedModel(defaultProv.default_model);
+      }
+    }).catch(() => {});
     api.getSkills().then(setSkills).catch(() => {});
   }, []);
 
@@ -87,6 +150,23 @@ export default function Chat() {
     }
   };
 
+  // Sync URL → state when navigating directly to /chat/:conversationId
+  useEffect(() => {
+    if (urlConvId && urlConvId !== activeConvId) {
+      setActiveConvId(urlConvId);
+    } else if (!urlConvId && activeConvId) {
+      setActiveConvId(null);
+    }
+  }, [urlConvId]);
+
+  // Sync state → URL when selecting a conversation
+  useEffect(() => {
+    const currentPath = activeConvId ? `/chat/${activeConvId}` : '/chat';
+    if (window.location.pathname !== currentPath) {
+      navigate(currentPath, { replace: true });
+    }
+  }, [activeConvId, navigate]);
+
   // Load conversation messages when active changes
   useEffect(() => {
     if (!activeConvId) {
@@ -97,25 +177,80 @@ export default function Chat() {
     loadConversation(activeConvId);
   }, [activeConvId]);
 
+  const MSG_PAGE_SIZE = 10;
+
   const loadConversation = async (id) => {
     try {
-      const data = await api.getConversation(id);
+      const data = await api.getConversation(id, { limit: MSG_PAGE_SIZE });
       setActiveConv(data);
       setMessages(data.messages || []);
+      setHasMoreMessages((data.messages || []).length < (data.total_messages || 0));
       if (data.provider_id) setSelectedProvider(data.provider_id);
       if (data.model) setSelectedModel(data.model);
       setSystemPrompt(data.system_prompt || '');
       setTemperature(data.temperature ?? null);
       setMaxTokens(data.max_tokens ?? null);
+      setContextLimit(data.context_limit ?? 10);
+      setAutoCompress(data.auto_compress !== 0 && data.auto_compress !== false);
+      if (data.contextInfo) setContextInfo(data.contextInfo);
     } catch {
       message.error('Failed to load conversation');
     }
   };
 
-  // Auto-scroll to bottom
+  // Auto-scroll to bottom (skip when loading older messages)
+  const skipAutoScroll = useRef(false);
+
+  const loadOlderMessages = useCallback(async () => {
+    if (!activeConvId || loadingMore || !hasMoreMessages || messages.length === 0) return;
+    setLoadingMore(true);
+    try {
+      const oldest = messages[0];
+      const data = await api.getConversation(activeConvId, { limit: MSG_PAGE_SIZE, before: oldest.created_at });
+      const older = (data.messages || []).filter(m => !messages.some(em => em.id === m.id));
+      if (older.length === 0) {
+        setHasMoreMessages(false);
+      } else {
+        // Preserve scroll position
+        const container = messagesContainerRef.current;
+        const prevHeight = container?.scrollHeight || 0;
+        skipAutoScroll.current = true;
+        setMessages(prev => [...older, ...prev]);
+        setHasMoreMessages(older.length >= MSG_PAGE_SIZE);
+        // After DOM update, restore scroll position
+        requestAnimationFrame(() => {
+          if (container) {
+            container.scrollTop = container.scrollHeight - prevHeight;
+          }
+        });
+      }
+    } catch {
+      message.error('Failed to load older messages');
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [activeConvId, loadingMore, hasMoreMessages, messages]);
+
   useEffect(() => {
+    if (skipAutoScroll.current) {
+      skipAutoScroll.current = false;
+      return;
+    }
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // Scroll-to-top detection for loading older messages
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    const handleScroll = () => {
+      if (container.scrollTop < 50 && hasMoreMessages && !loadingMore) {
+        loadOlderMessages();
+      }
+    };
+    container.addEventListener('scroll', handleScroll);
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, [hasMoreMessages, loadingMore, loadOlderMessages]);
 
   // Create new conversation
   const handleNewConversation = async () => {
@@ -152,6 +287,22 @@ export default function Chat() {
       setActiveConv(prev => ({ ...prev, title: editTitleValue.trim() }));
     }
     setEditingTitle(null);
+  };
+
+  // Compress conversation memory
+  const handleCompress = async () => {
+    if (!activeConvId || compressing) return;
+    setCompressing(true);
+    try {
+      const result = await api.compressConversation(activeConvId);
+      if (result.contextInfo) setContextInfo(result.contextInfo);
+      message.success('Conversation memory compressed');
+      loadConversation(activeConvId);
+    } catch (err) {
+      message.error('Compression failed: ' + (err.message || 'Unknown error'));
+    } finally {
+      setCompressing(false);
+    }
   };
 
   // Send message
@@ -240,7 +391,7 @@ export default function Chat() {
                 return msgs;
               });
             } else if (data.type === 'done') {
-              // Streaming complete
+              if (data.contextInfo) setContextInfo(data.contextInfo);
             } else if (data.type === 'error') {
               message.error(data.error);
             }
@@ -285,6 +436,37 @@ export default function Chat() {
     setAttachments(prev => prev.filter((_, i) => i !== idx));
   };
 
+  // Handle paste with files (Ctrl+V images/files)
+  const handlePaste = useCallback((e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.kind === 'file') {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file) handleFileUpload(file);
+      }
+    }
+  }, []);
+
+  // Handle drag & drop files
+  const handleDragOver = useCallback((e) => {
+    e.preventDefault();
+    setDragOver(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e) => {
+    e.preventDefault();
+    setDragOver(false);
+  }, []);
+
+  const handleDrop = useCallback((e) => {
+    e.preventDefault();
+    setDragOver(false);
+    const files = e.dataTransfer?.files;
+    if (files) Array.from(files).forEach(handleFileUpload);
+  }, []);
+
   // Handle keyboard shortcuts
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -299,6 +481,91 @@ export default function Chat() {
     message.success('Copied');
   };
 
+  // Skill management
+  const toggleSkillSelection = (skillId) => {
+    setSelectedSkills(prev =>
+      prev.includes(skillId) ? prev.filter(id => id !== skillId) : [...prev, skillId]
+    );
+  };
+
+  const handleAddSkill = async () => {
+    if (!newSkillName.trim() || !newSkillPrompt.trim()) return;
+    try {
+      const id = await api.createSkill({ name: newSkillName.trim(), prompt_template: newSkillPrompt.trim(), enabled: true });
+      setSkills(prev => [...prev, { id, name: newSkillName.trim(), prompt_template: newSkillPrompt.trim(), enabled: 1 }]);
+      setNewSkillName('');
+      setNewSkillPrompt('');
+      setEditingSkill(null);
+      message.success('Skill added');
+    } catch {
+      message.error('Failed to add skill');
+    }
+  };
+
+  const handleToggleSkillEnabled = async (skill) => {
+    const enabled = !skill.enabled;
+    try {
+      await api.updateSkill(skill.id, { ...skill, enabled });
+      setSkills(prev => prev.map(s => s.id === skill.id ? { ...s, enabled: enabled ? 1 : 0 } : s));
+      if (!enabled) setSelectedSkills(prev => prev.filter(id => id !== skill.id));
+    } catch {
+      message.error('Failed to update skill');
+    }
+  };
+
+  const handleDeleteSkill = async (skillId) => {
+    try {
+      await api.deleteSkill(skillId);
+      setSkills(prev => prev.filter(s => s.id !== skillId));
+      setSelectedSkills(prev => prev.filter(id => id !== skillId));
+    } catch {
+      message.error('Failed to delete skill');
+    }
+  };
+
+  // Install a skill from the store catalog
+  const handleInstallStoreSkill = async (storeSkill) => {
+    // Check if already installed (by name)
+    if (skills.some(s => s.name === storeSkill.name)) {
+      message.warning(`"${storeSkill.name}" is already installed`);
+      return;
+    }
+    try {
+      const result = await api.createSkill({
+        name: storeSkill.name,
+        description: storeSkill.description,
+        prompt_template: storeSkill.prompt_template,
+        enabled: true,
+      });
+      setSkills(prev => [...prev, result]);
+      message.success(`Installed "${storeSkill.name}"`);
+    } catch {
+      message.error('Failed to install skill');
+    }
+  };
+
+  // Import skill(s) from URL
+  const [importUrl, setImportUrl] = useState('');
+  const [importing, setImporting] = useState(false);
+  const handleImportFromUrl = async () => {
+    if (!importUrl.trim()) return;
+    setImporting(true);
+    try {
+      const result = await api.importSkills(importUrl.trim());
+      if (result.imported) {
+        setSkills(prev => [...prev, ...result.imported]);
+        message.success(`Imported ${result.imported.length} skill(s)`);
+        setImportUrl('');
+      } else {
+        message.error(result.error || 'Import failed');
+      }
+    } catch {
+      message.error('Failed to import from URL');
+    } finally {
+      setImporting(false);
+    }
+  };
+
   // Search conversations
   useEffect(() => {
     const timer = setTimeout(() => loadConversations(searchText || undefined), 300);
@@ -308,16 +575,85 @@ export default function Chat() {
   // Render message content with markdown
   const renderMessageContent = (msg) => {
     if (msg.role === 'assistant' && !msg.content && streaming) {
-      return <div className="chat-typing-indicator"><span /><span /><span /></div>;
+      return (
+        <div className="chat-typing-indicator">
+          <span>Thinking</span>
+          <div className="chat-typing-dots"><span /><span /><span /></div>
+        </div>
+      );
     }
+    if (!msg.content) return null;
+
     return (
       <div className="chat-markdown">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content || ''}</ReactMarkdown>
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
       </div>
     );
   };
 
   const isImage = (mimetype) => mimetype?.startsWith('image/');
+  const isPdf = (mimetype) => mimetype === 'application/pdf';
+  const isText = (mimetype) => mimetype?.startsWith('text/') || ['application/json', 'application/xml', 'application/javascript'].includes(mimetype);
+
+  const getFileIcon = (mimetype) => {
+    if (!mimetype) return <FileUnknownOutlined />;
+    if (mimetype.startsWith('image/')) return <FileImageOutlined />;
+    if (mimetype === 'application/pdf') return <FilePdfOutlined />;
+    if (mimetype.includes('zip') || mimetype.includes('tar') || mimetype.includes('rar') || mimetype.includes('compress')) return <FileZipOutlined />;
+    if (mimetype.includes('excel') || mimetype.includes('spreadsheet')) return <FileExcelOutlined />;
+    if (mimetype.includes('word') || mimetype.includes('document')) return <FileWordOutlined />;
+    if (isText(mimetype)) return <FileTextOutlined />;
+    return <FileUnknownOutlined />;
+  };
+
+  const formatFileSize = (bytes) => {
+    if (!bytes) return '';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  // Render a single attachment in a message
+  const renderAttachment = (att, idx, inUserBubble) => {
+    if (isImage(att.mimetype)) {
+      return (
+        <div key={idx} className="chat-att-image-wrap">
+          <Image
+            src={att.url}
+            alt={att.name}
+            width={180}
+            style={{ borderRadius: 6, maxHeight: 160, objectFit: 'cover' }}
+            placeholder={<div className="chat-att-image-placeholder">Loading...</div>}
+          />
+          <div className="chat-att-image-name">{att.name}</div>
+        </div>
+      );
+    }
+
+    // Clickable file card
+    const canPreview = isPdf(att.mimetype) || isText(att.mimetype) || isImage(att.mimetype);
+    return (
+      <a
+        key={idx}
+        href={att.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={`chat-att-file ${inUserBubble ? 'chat-att-file-user' : ''}`}
+        title={canPreview ? 'Click to preview' : 'Click to download'}
+      >
+        <div className="chat-att-file-icon">
+          {getFileIcon(att.mimetype)}
+        </div>
+        <div className="chat-att-file-info">
+          <div className="chat-att-file-name">{att.name}</div>
+          <div className="chat-att-file-meta">
+            {formatFileSize(att.size)}
+            {canPreview && <span className="chat-att-file-action"><EyeOutlined /> Preview</span>}
+          </div>
+        </div>
+      </a>
+    );
+  };
 
   const enabledProviders = providers.filter(p => p.enabled);
 
@@ -446,26 +782,30 @@ export default function Chat() {
                   value={selectedProvider}
                   onChange={val => {
                     setSelectedProvider(val);
-                    if (activeConvId) api.updateConversation(activeConvId, { provider_id: val });
+                    const prov = providers.find(p => p.id === val);
+                    // Always switch model to the provider's default
+                    const newModel = prov?.default_model || '';
+                    setSelectedModel(newModel);
+                    if (activeConvId) api.updateConversation(activeConvId, { provider_id: val, model: newModel });
                   }}
+                  options={enabledProviders.map(p => ({ value: p.id, label: p.name }))}
                   style={{ width: 160 }}
                   size="small"
                   allowClear
-                >
-                  {enabledProviders.map(p => (
-                    <Select.Option key={p.id} value={p.id}>
-                      {p.name}
-                    </Select.Option>
-                  ))}
-                </Select>
-                <Input
+                />
+                <AutoComplete
                   placeholder="Model"
                   value={selectedModel || ''}
-                  onChange={e => {
-                    setSelectedModel(e.target.value);
-                    if (activeConvId) api.updateConversation(activeConvId, { model: e.target.value });
+                  onChange={val => {
+                    setSelectedModel(val);
+                    if (activeConvId) api.updateConversation(activeConvId, { model: val });
                   }}
-                  style={{ width: 160 }}
+                  options={buildModelOptions(providers.find(p => p.id === selectedProvider)?.type || '')}
+                  filterOption={(input, option) =>
+                    (option?.value || '').toLowerCase().includes(input.toLowerCase())
+                  }
+                  allowClear
+                  style={{ width: 200 }}
                   size="small"
                 />
                 <Tooltip title="Model Settings">
@@ -559,46 +899,92 @@ export default function Chat() {
                     Maximum number of tokens in the response
                   </div>
                 </div>
+
+                <div className="chat-settings-section">
+                  <label className="chat-settings-label">
+                    <CompressOutlined style={{ marginRight: 6 }} />
+                    Memory Management
+                  </label>
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                      <span style={{ fontSize: 13 }}>Context Limit</span>
+                      <InputNumber
+                        min={5}
+                        max={50}
+                        value={contextLimit}
+                        onChange={val => { setContextLimit(val); saveConvSettings({ context_limit: val }); }}
+                        size="small"
+                        style={{ width: 70 }}
+                      />
+                    </div>
+                    <div className="chat-settings-hint">
+                      Max messages sent to AI per request (older messages get summarized)
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: 13 }}>Auto-compress</span>
+                    <Switch
+                      size="small"
+                      checked={autoCompress}
+                      onChange={val => { setAutoCompress(val); saveConvSettings({ auto_compress: val }); }}
+                    />
+                  </div>
+                  <div className="chat-settings-hint">
+                    Automatically summarize older messages when context limit is reached
+                  </div>
+                </div>
+
               </div>
             </Drawer>
 
             {/* Messages */}
-            <div className="chat-messages">
-              {messages.length === 0 && (
+            <div className="chat-messages" ref={messagesContainerRef}>
+              {loadingMore && (
+                <div className="chat-messages-loading-more">
+                  <Spin size="small" /> Loading earlier messages...
+                </div>
+              )}
+              {messages.length === 0 && !loadingMore && (
                 <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-tertiary)' }}>
                   <MessageOutlined style={{ fontSize: 32, marginBottom: 12, display: 'block' }} />
                   Send a message to start the conversation
                 </div>
               )}
               {messages.map((msg, idx) => (
-                <div key={msg.id || idx} className={`chat-message chat-message-${msg.role}`}>
-                  <div className="chat-message-avatar">
-                    {msg.role === 'user' ? <UserOutlined /> : <RobotOutlined />}
+                msg.is_summary ? (
+                  <div key={msg.id || idx} className="chat-message chat-message-summary">
+                    <div className="chat-message-bubble chat-summary-bubble">
+                      <div className="chat-message-header">
+                        <span className="chat-summary-badge"><CompressOutlined /> Conversation Summary</span>
+                        {msg.created_at && (
+                          <span className="chat-message-time">
+                            {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        )}
+                      </div>
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                    </div>
                   </div>
-                  <div className="chat-message-content">
+                ) : (
+                <div key={msg.id || idx} className={`chat-message chat-message-${msg.role}`}>
+                  {msg.role === 'assistant' && (
+                    <div className="chat-message-avatar">
+                      <RobotOutlined />
+                    </div>
+                  )}
+                  <div className="chat-message-bubble">
                     <div className="chat-message-header">
                       <span className="chat-message-role">{msg.role === 'user' ? 'You' : 'Assistant'}</span>
                       {msg.created_at && (
                         <span className="chat-message-time">
-                          {new Date(msg.created_at).toLocaleTimeString()}
+                          {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </span>
                       )}
                     </div>
                     {/* Attachments */}
                     {msg.attachments && msg.attachments.length > 0 && (
                       <div className="chat-message-attachments">
-                        {msg.attachments.map((att, i) => (
-                          <div key={i} className="chat-attachment">
-                            {isImage(att.mimetype) ? (
-                              <img src={att.url} alt={att.name} className="chat-attachment-image" />
-                            ) : (
-                              <div className="chat-attachment-file">
-                                <FileTextOutlined />
-                                <span>{att.name}</span>
-                              </div>
-                            )}
-                          </div>
-                        ))}
+                        {msg.attachments.map((att, i) => renderAttachment(att, i, msg.role === 'user'))}
                       </div>
                     )}
                     {renderMessageContent(msg)}
@@ -611,59 +997,117 @@ export default function Chat() {
                     )}
                   </div>
                 </div>
+                )
               ))}
               <div ref={messagesEndRef} />
             </div>
 
+            {/* Context Info Bar */}
+            {contextInfo && activeConvId && (
+              <div className="chat-context-bar">
+                <div className="chat-context-stats">
+                  <span className="chat-context-stat">
+                    <DatabaseOutlined />
+                    <span>{contextInfo.contextMessages}/{contextInfo.totalMessages} in context</span>
+                  </span>
+                  <span className="chat-context-stat">
+                    <InfoCircleOutlined />
+                    <span>~{(contextInfo.estimatedTokens || 0).toLocaleString()} tokens</span>
+                  </span>
+                  {contextInfo.hasSummary && (
+                    <span className="chat-context-badge">Summary active</span>
+                  )}
+                </div>
+                <div className="chat-context-actions">
+                  {(contextInfo.compressRecommended || contextInfo.totalMessages > contextInfo.contextMessages) && (
+                    <Tooltip title="Summarize older messages to free context space">
+                      <Button
+                        size="small"
+                        type="link"
+                        icon={<CompressOutlined />}
+                        onClick={handleCompress}
+                        loading={compressing}
+                      >
+                        Compress
+                      </Button>
+                    </Tooltip>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Input Area */}
-            <div className="chat-input-area">
+            <div
+              className={`chat-input-area ${dragOver ? 'chat-input-dragover' : ''}`}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+            >
               {/* Attachments preview */}
               {attachments.length > 0 && (
                 <div className="chat-input-attachments">
-                  {attachments.map((att, i) => (
+                  {attachments.map((att, i) => isImage(att.mimetype) ? (
+                    <div key={i} className="chat-input-attachment-image">
+                      <img src={att.url} alt={att.name} className="chat-input-att-preview" />
+                      <Button
+                        size="small"
+                        type="text"
+                        className="chat-input-att-remove"
+                        icon={<CloseOutlined />}
+                        onClick={() => removeAttachment(i)}
+                      />
+                    </div>
+                  ) : (
                     <div key={i} className="chat-input-attachment">
-                      {isImage(att.mimetype) ? (
-                        <img src={att.url} alt={att.name} />
-                      ) : (
-                        <FileTextOutlined style={{ fontSize: 20 }} />
-                      )}
-                      <span>{att.name}</span>
+                      <div className="chat-input-att-icon">{getFileIcon(att.mimetype)}</div>
+                      <div className="chat-input-att-info">
+                        <span className="chat-input-att-name">{att.name}</span>
+                        {att.size && <span className="chat-input-att-size">{formatFileSize(att.size)}</span>}
+                      </div>
                       <Button size="small" type="text" icon={<CloseOutlined />} onClick={() => removeAttachment(i)} />
                     </div>
                   ))}
                 </div>
               )}
 
-              {/* Skills selector */}
-              {skills.length > 0 && (
-                <div className="chat-input-skills">
-                  <ThunderboltOutlined style={{ color: 'var(--text-tertiary)', marginRight: 6 }} />
-                  <Checkbox.Group
-                    value={selectedSkills}
-                    onChange={setSelectedSkills}
-                    options={skills.filter(s => s.enabled).map(s => ({
-                      label: s.name,
-                      value: s.id,
-                    }))}
-                  />
+              {/* Toolbar: skills + mode */}
+              <div className="chat-input-toolbar">
+                <div className="chat-skills-bar">
+                  {skills.filter(s => s.enabled).map(s => (
+                    <div
+                      key={s.id}
+                      className={`chat-skill-chip ${selectedSkills.includes(s.id) ? 'active' : ''}`}
+                      onClick={() => toggleSkillSelection(s.id)}
+                    >
+                      <ThunderboltOutlined />
+                      <span>{s.name}</span>
+                    </div>
+                  ))}
+                  <Tooltip title="Manage Skills">
+                    <div
+                      className="chat-skill-chip chat-skill-manage"
+                      onClick={() => setSkillsManagerOpen(true)}
+                    >
+                      <AppstoreOutlined />
+                    </div>
+                  </Tooltip>
                 </div>
-              )}
 
-              {/* Mode toggle */}
-              <div className="chat-mode-toggle">
-                <div
-                  className={`chat-mode-btn ${chatMode === 'plan' ? 'active' : ''}`}
-                  onClick={() => setChatMode('plan')}
-                >
-                  <BulbOutlined />
-                  <span>Plan</span>
-                </div>
-                <div
-                  className={`chat-mode-btn ${chatMode === 'edit' ? 'active' : ''}`}
-                  onClick={() => setChatMode('edit')}
-                >
-                  <FormOutlined />
-                  <span>Edit</span>
+                <div className="chat-mode-toggle">
+                  <div
+                    className={`chat-mode-btn ${chatMode === 'plan' ? 'active' : ''}`}
+                    onClick={() => setChatMode('plan')}
+                  >
+                    <BulbOutlined />
+                    <span>Plan</span>
+                  </div>
+                  <div
+                    className={`chat-mode-btn ${chatMode === 'edit' ? 'active' : ''}`}
+                    onClick={() => setChatMode('edit')}
+                  >
+                    <FormOutlined />
+                    <span>Edit</span>
+                  </div>
                 </div>
               </div>
 
@@ -686,10 +1130,11 @@ export default function Chat() {
                 />
                 <TextArea
                   ref={inputRef}
-                  placeholder="Type a message... (Shift+Enter for new line)"
+                  placeholder="Type a message... (Ctrl+V to paste files, drag & drop supported)"
                   value={inputText}
                   onChange={e => setInputText(e.target.value)}
                   onKeyDown={handleKeyDown}
+                  onPaste={handlePaste}
                   autoSize={{ minRows: 1, maxRows: 6 }}
                   className="chat-input-textarea"
                   disabled={streaming}
@@ -704,6 +1149,148 @@ export default function Chat() {
                 />
               </div>
             </div>
+
+            {/* Skills Manager Drawer */}
+            <Drawer
+              title="Skills"
+              open={skillsManagerOpen}
+              onClose={() => { setSkillsManagerOpen(false); setEditingSkill(null); setNewSkillName(''); setNewSkillPrompt(''); }}
+              width={480}
+            >
+              <Tabs
+                defaultActiveKey="installed"
+                size="small"
+                items={[
+                  {
+                    key: 'installed',
+                    label: <span><ThunderboltOutlined /> Installed ({skills.length})</span>,
+                    children: (
+                      <div className="skills-manager">
+                        {/* Add new skill */}
+                        <div className="skills-manager-add">
+                          <h4 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 600 }}>Create Custom Skill</h4>
+                          <Input
+                            placeholder="Skill name"
+                            value={newSkillName}
+                            onChange={e => setNewSkillName(e.target.value)}
+                            size="small"
+                            style={{ marginBottom: 6 }}
+                          />
+                          <TextArea
+                            placeholder="Prompt template... (the instruction prepended to your message)"
+                            value={newSkillPrompt}
+                            onChange={e => setNewSkillPrompt(e.target.value)}
+                            autoSize={{ minRows: 2, maxRows: 5 }}
+                            size="small"
+                          />
+                          <Button
+                            type="primary"
+                            size="small"
+                            icon={<PlusOutlined />}
+                            onClick={handleAddSkill}
+                            disabled={!newSkillName.trim() || !newSkillPrompt.trim()}
+                            style={{ marginTop: 8 }}
+                          >
+                            Add
+                          </Button>
+                        </div>
+
+                        {/* Import from URL */}
+                        <div className="skills-manager-import">
+                          <h4 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 600 }}><LinkOutlined /> Import from URL</h4>
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <Input
+                              placeholder="https://example.com/skills.json"
+                              value={importUrl}
+                              onChange={e => setImportUrl(e.target.value)}
+                              onPressEnter={handleImportFromUrl}
+                              size="small"
+                              style={{ flex: 1 }}
+                            />
+                            <Button
+                              size="small"
+                              icon={<CloudDownloadOutlined />}
+                              onClick={handleImportFromUrl}
+                              loading={importing}
+                              disabled={!importUrl.trim()}
+                            >
+                              Import
+                            </Button>
+                          </div>
+                          <div className="skills-manager-hint">
+                            JSON format: {'{'} "name", "prompt_template" {'}'} or array
+                          </div>
+                        </div>
+
+                        {/* Skill list */}
+                        <div className="skills-manager-list">
+                          {skills.length === 0 ? (
+                            <div style={{ textAlign: 'center', padding: 20, color: 'var(--text-tertiary)', fontSize: 13 }}>
+                              No skills installed. Create one above or browse the Store.
+                            </div>
+                          ) : skills.map(s => (
+                            <div key={s.id} className="skills-manager-item">
+                              <div className="skills-manager-item-info">
+                                <div className="skills-manager-item-header">
+                                  <ThunderboltOutlined style={{ color: s.enabled ? 'var(--color-primary)' : 'var(--text-tertiary)' }} />
+                                  <span className="skills-manager-item-name">{s.name}</span>
+                                </div>
+                                <div className="skills-manager-item-prompt">{s.prompt_template}</div>
+                              </div>
+                              <div className="skills-manager-item-actions">
+                                <Switch
+                                  size="small"
+                                  checked={!!s.enabled}
+                                  onChange={() => handleToggleSkillEnabled(s)}
+                                />
+                                <Popconfirm title="Delete this skill?" onConfirm={() => handleDeleteSkill(s.id)}>
+                                  <Button size="small" type="text" danger icon={<DeleteOutlined />} />
+                                </Popconfirm>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ),
+                  },
+                  {
+                    key: 'store',
+                    label: <span><AppstoreOutlined /> Store</span>,
+                    children: (
+                      <div className="skills-store">
+                        {SKILL_STORE.map(cat => (
+                          <div key={cat.category} className="skills-store-category">
+                            <h4 className="skills-store-category-title">{cat.category}</h4>
+                            <div className="skills-store-grid">
+                              {cat.items.map(item => {
+                                const installed = skills.some(s => s.name === item.name);
+                                return (
+                                  <div key={item.name} className={`skills-store-card ${installed ? 'installed' : ''}`}>
+                                    <div className="skills-store-card-info">
+                                      <div className="skills-store-card-name">{item.name}</div>
+                                      <div className="skills-store-card-desc">{item.description}</div>
+                                    </div>
+                                    <Button
+                                      size="small"
+                                      type={installed ? 'default' : 'primary'}
+                                      icon={installed ? <CheckOutlined /> : <DownloadOutlined />}
+                                      onClick={() => !installed && handleInstallStoreSkill(item)}
+                                      disabled={installed}
+                                    >
+                                      {installed ? 'Installed' : 'Install'}
+                                    </Button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ),
+                  },
+                ]}
+              />
+            </Drawer>
           </>
         )}
       </div>

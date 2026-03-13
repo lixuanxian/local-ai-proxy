@@ -210,37 +210,30 @@ export default function Logs() {
         </div>
       )}
 
-      <div className="filter-bar">
-        <SearchOutlined style={{ color: 'var(--text-tertiary)' }} />
-        <Input
-          placeholder="Search provider, model, format..."
-          value={filters.search}
-          onChange={(e) => setFilters({ ...filters, search: e.target.value })}
-          style={{ flex: 1, maxWidth: 300, border: 'none', boxShadow: 'none' }}
-          allowClear
-          onPressEnter={() => load({ page: 1 })}
-        />
-        <div style={{ width: 1, height: 20, background: 'var(--border-color)' }} />
-        <select
-          value={filters.status}
-          onChange={(e) => { setFilters({ ...filters, status: e.target.value }); load({ page: 1, status: e.target.value }); }}
-          style={{
-            padding: '4px 8px',
-            borderRadius: 'var(--radius-sm)',
-            border: '1px solid var(--border-color)',
-            background: 'transparent',
-            color: 'var(--text-secondary)',
-            fontSize: 13,
-            cursor: 'pointer',
-          }}
-        >
-          <option value="">All Status</option>
-          <option value="success">Success</option>
-          <option value="error">Errors</option>
-        </select>
-        <Button type="primary" size="small" onClick={() => load({ page: 1 })}>
-          Apply
-        </Button>
+      <div className="filter-bar" style={{ justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          {[{ label: 'All', value: '' }, { label: 'Success', value: 'success' }, { label: 'Errors', value: 'error' }].map((opt) => (
+            <Button
+              key={opt.value}
+              size="small"
+              type={filters.status === opt.value ? 'primary' : 'default'}
+              onClick={() => { setFilters({ ...filters, status: opt.value }); load({ page: 1, status: opt.value }); }}
+            >
+              {opt.label}
+            </Button>
+          ))}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <SearchOutlined style={{ color: 'var(--text-tertiary)' }} />
+          <Input
+            placeholder="Search provider, model, format..."
+            value={filters.search}
+            onChange={(e) => setFilters({ ...filters, search: e.target.value })}
+            style={{ width: 260, border: 'none', boxShadow: 'none' }}
+            allowClear
+            onPressEnter={() => load({ page: 1 })}
+          />
+        </div>
       </div>
 
       <Table

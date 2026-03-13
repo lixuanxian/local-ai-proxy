@@ -1,12 +1,11 @@
 import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
-import { Menu, ConfigProvider, theme, Spin } from 'antd';
+import { Menu, ConfigProvider, theme, Spin, Modal, Button, Tag } from 'antd';
 import {
   DashboardOutlined,
   ApiOutlined,
   FileTextOutlined,
   AppstoreOutlined,
-  CloudServerOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   BulbOutlined,
@@ -15,6 +14,10 @@ import {
   SettingOutlined,
   SearchOutlined,
   MessageOutlined,
+  CopyOutlined,
+  SafetyOutlined,
+  CheckCircleOutlined,
+  CloseCircleOutlined,
 } from '@ant-design/icons';
 import { api } from './api';
 import CommandPalette from './components/CommandPalette';
@@ -24,8 +27,9 @@ const Chat = lazy(() => import('./pages/Chat'));
 const Providers = lazy(() => import('./pages/Providers'));
 const Logs = lazy(() => import('./pages/Logs'));
 const Apps = lazy(() => import('./pages/Apps'));
-const Docker = lazy(() => import('./pages/Docker'));
 const Settings = lazy(() => import('./pages/Settings'));
+const ApiPage = lazy(() => import('./pages/Api'));
+const EmbedChat = lazy(() => import('./pages/EmbedChat'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 
 const menuItems = [
@@ -34,7 +38,7 @@ const menuItems = [
   { key: '/providers', icon: <ApiOutlined />, label: 'Providers' },
   { key: '/logs', icon: <FileTextOutlined />, label: 'Logs' },
   { key: '/apps', icon: <AppstoreOutlined />, label: 'Apps' },
-  { key: '/docker', icon: <CloudServerOutlined />, label: 'Docker' },
+  { key: '/api', icon: <ApiOutlined />, label: 'API' },
   { key: '/settings', icon: <SettingOutlined />, label: 'Settings' },
 ];
 
@@ -44,7 +48,7 @@ const pageNames = {
   '/providers': 'Providers',
   '/logs': 'Logs',
   '/apps': 'Apps',
-  '/docker': 'Docker',
+  '/api': 'API',
   '/settings': 'Settings',
 };
 
@@ -57,6 +61,9 @@ export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
 
+  const [pendingOrigins, setPendingOrigins] = useState([]);
+  const [corsModalOpen, setCorsModalOpen] = useState(false);
+
   useEffect(() => {
     api.getInfo().then((d) => { setInfo(d); setHealthy(true); }).catch(() => setHealthy(false));
     const healthInterval = setInterval(() => {
@@ -64,6 +71,38 @@ export default function App() {
     }, 30000);
     return () => clearInterval(healthInterval);
   }, []);
+
+  // Poll for pending CORS origins in controlled mode
+  useEffect(() => {
+    let active = true;
+    const poll = async () => {
+      try {
+        const settings = await api.getSettings();
+        if (settings.cors_mode !== 'controlled') return;
+        const pending = await api.getCorsOriginsPending();
+        if (!active) return;
+        if (pending.length > 0) {
+          setPendingOrigins(pending);
+          setCorsModalOpen(true);
+        }
+      } catch { /* ignore */ }
+    };
+    poll();
+    const interval = setInterval(poll, 5000);
+    return () => { active = false; clearInterval(interval); };
+  }, []);
+
+  const handleCorsApprove = async (id) => {
+    await api.updateCorsOrigin(id, 'approved');
+    setPendingOrigins(prev => prev.filter(o => o.id !== id));
+    if (pendingOrigins.length <= 1) setCorsModalOpen(false);
+  };
+
+  const handleCorsReject = async (id) => {
+    await api.updateCorsOrigin(id, 'rejected');
+    setPendingOrigins(prev => prev.filter(o => o.id !== id));
+    if (pendingOrigins.length <= 1) setCorsModalOpen(false);
+  };
 
   useEffect(() => {
     const mode = darkMode ? 'dark' : 'light';
@@ -91,7 +130,7 @@ export default function App() {
       '3': '/providers',
       '4': '/logs',
       '5': '/apps',
-      '6': '/docker',
+      '6': '/api',
       '7': '/settings',
     };
 
@@ -135,11 +174,59 @@ export default function App() {
     },
   };
 
-  const currentPage = pageNames[location.pathname] || '';
+  const currentPage = pageNames[location.pathname] || (location.pathname.startsWith('/chat/') ? 'Chat' : '');
+
+  // Render embed routes outside the main layout (no sidebar/header)
+  if (location.pathname === '/embed/chat') {
+    return (
+      <Suspense fallback={null}>
+        <EmbedChat />
+      </Suspense>
+    );
+  }
 
   return (
     <ConfigProvider theme={themeConfig}>
       <CommandPalette onToggleTheme={() => setDarkMode(d => !d)} />
+
+      {/* CORS Authorization Modal */}
+      <Modal
+        title={<span><SafetyOutlined style={{ marginRight: 8 }} />CORS Authorization Request</span>}
+        open={corsModalOpen}
+        onCancel={() => setCorsModalOpen(false)}
+        footer={null}
+        width={480}
+      >
+        <div style={{ marginBottom: 8, color: 'var(--text-secondary)', fontSize: 13 }}>
+          The following origins are requesting API access:
+        </div>
+        {pendingOrigins.map(origin => (
+          <div key={origin.id} style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '10px 12px', marginBottom: 8,
+            borderRadius: 'var(--radius-sm)',
+            border: '1px solid var(--border-color)',
+            background: 'var(--bg-secondary)',
+          }}>
+            <div>
+              <div style={{ fontWeight: 500, fontFamily: 'var(--font-mono)', fontSize: 12 }}>{origin.origin}</div>
+              <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+                {origin.first_seen ? new Date(origin.first_seen + 'Z').toLocaleString() : ''}
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <Button size="small" type="primary" icon={<CheckCircleOutlined />}
+                onClick={() => handleCorsApprove(origin.id)}>
+                Approve
+              </Button>
+              <Button size="small" danger icon={<CloseCircleOutlined />}
+                onClick={() => handleCorsReject(origin.id)}>
+                Reject
+              </Button>
+            </div>
+          </div>
+        ))}
+      </Modal>
 
       {/* Mobile overlay */}
       {mobileOpen && (
@@ -161,7 +248,7 @@ export default function App() {
         </div>
         <Menu
           mode="inline"
-          selectedKeys={[location.pathname]}
+          selectedKeys={[location.pathname.startsWith('/chat/') ? '/chat' : location.pathname]}
           items={menuItems}
           onClick={({ key }) => navigate(key)}
           style={{ flex: 1 }}
@@ -208,18 +295,31 @@ export default function App() {
               <span>Search...</span>
               <span className="kbd" style={{ fontSize: 9, padding: '1px 4px' }}>Ctrl+K</span>
             </div>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: healthy ? 'var(--color-success)' : 'var(--color-error)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: healthy ? 'var(--color-success)' : 'var(--color-error)', textDecoration: 'none', cursor: 'pointer' }}>
               <span className={`status-dot ${healthy ? 'online' : 'offline'}`} style={{ marginRight: 0 }} />
               {healthy ? 'Healthy' : 'Offline'}
-            </span>
+            </div>
             {info && (
               <>
-                <span className="header-badge">
+                <span className="header-badge" style={{ cursor: 'pointer' }} onClick={() => navigate('/providers')}>
                   <ApiOutlined />
                   {info.providers?.length || 0} providers
                 </span>
-                <span style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>
-                  :{info?.port || 3199}
+                <span
+                  style={{ color: 'var(--text-tertiary)', fontSize: 12, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                  onClick={() => {
+                    const url = `http://localhost:${info?.port || 3199}`;
+                    navigator.clipboard.writeText(url).then(() => {
+                      const el = document.getElementById('copy-toast');
+                      if (el) { el.style.opacity = 1; setTimeout(() => { el.style.opacity = 0; }, 1500); }
+                    });
+                    navigate('/settings');
+                  }}
+                  title="Click to copy address and go to Settings"
+                >
+                  <CopyOutlined style={{ fontSize: 11 }} />
+                  http://localhost:{info?.port || 3199}
+                  <span id="copy-toast" style={{ opacity: 0, transition: 'opacity 0.3s', color: 'var(--color-success)', fontSize: 11, marginLeft: 2 }}>Copied!</span>
                 </span>
               </>
             )}
@@ -234,10 +334,11 @@ export default function App() {
             <Routes>
               <Route path="/" element={<Dashboard />} />
               <Route path="/chat" element={<Chat />} />
+              <Route path="/chat/:conversationId" element={<Chat />} />
               <Route path="/providers" element={<Providers />} />
               <Route path="/logs" element={<Logs />} />
               <Route path="/apps" element={<Apps />} />
-              <Route path="/docker" element={<Docker />} />
+              <Route path="/api" element={<ApiPage />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="*" element={<NotFound />} />
             </Routes>

@@ -5,25 +5,23 @@ import {
   ThunderboltOutlined,
   ApiOutlined,
   ClockCircleOutlined,
-  StarOutlined,
-  LinkOutlined,
   ReloadOutlined,
   AppstoreOutlined,
   SyncOutlined,
   DesktopOutlined,
-  CloudOutlined,
+
   CodeOutlined,
   RobotOutlined,
   BarChartOutlined,
   FieldTimeOutlined,
 } from '@ant-design/icons';
 import { api } from '../api';
+import { QuickAccessCard } from './Apps';
 
 const typeIcons = {
   'cli': <CodeOutlined />,
   'openai-api': <ApiOutlined />,
   'anthropic-api': <RobotOutlined />,
-  'ollama': <CloudOutlined />,
   'gemini-api': <ApiOutlined />,
 };
 
@@ -31,7 +29,6 @@ const typeColors = {
   'cli': '#6366f1',
   'openai-api': '#10b981',
   'anthropic-api': '#f59e0b',
-  'ollama': '#3b82f6',
   'gemini-api': '#ef4444',
 };
 
@@ -66,7 +63,7 @@ export default function Dashboard() {
     const promises = [
       api.getLogStats(),
       api.getInfo(),
-      api.getApps(),
+      api.getAllAppsUnified(),
       api.getProviders(),
       api.getHourlyStats().catch(() => []),
       api.getProviderStats().catch(() => []),
@@ -76,7 +73,7 @@ export default function Dashboard() {
       .then(([s, i, a, p, hs, ps, ms]) => {
         setStats(s);
         setInfo(i);
-        setApps(a);
+        setApps(a.filter(app => app.status === 'approved'));
         setProviders(p);
         setHourlyStats(hs);
         setProviderStats(ps);
@@ -368,25 +365,15 @@ export default function Dashboard() {
       {apps.length === 0 ? (
         <div className="empty-state">
           <div className="empty-state-icon"><AppstoreOutlined /></div>
-          <div className="empty-state-text">No apps configured yet</div>
+          <div className="empty-state-text">No approved apps yet</div>
           <Button type="primary" onClick={() => window.location.href = '/apps'}>
-            Add Your First App
+            Manage Apps
           </Button>
         </div>
       ) : (
         <div className="grid grid-4">
           {apps.map((app) => (
-            <div
-              key={app.id}
-              className="app-card"
-              onClick={() => window.open(app.url, '_blank')}
-            >
-              <div className="app-card-icon">
-                {app.icon || <LinkOutlined style={{ fontSize: 32, color: 'var(--color-primary)' }} />}
-              </div>
-              <div className="app-card-name">{app.name}</div>
-              <div className="app-card-desc">{app.description || app.url}</div>
-            </div>
+            <QuickAccessCard key={`${app.source}-${app.id}`} item={app} />
           ))}
         </div>
       )}

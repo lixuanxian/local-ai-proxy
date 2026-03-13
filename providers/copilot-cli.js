@@ -1,45 +1,38 @@
-const { spawn } = require("child_process");
-const { formatMessages, makeResponse } = require("../lib/utils");
+const BaseCLIProvider = require("./base-cli");
 
-// GitHub Copilot provider - uses gh copilot explain
-// Requires: gh extension install github/gh-copilot
-module.exports = {
+// GitHub Copilot CLI provider
+// Install: npm install -g @github/copilot  (or winget install GitHub.Copilot)
+// Flags: -p (prompt), -s (non-interactive), --output-format (text|json), --model
+// JSON events: assistant.message (data.content), assistant.message_delta (data.deltaContent)
+module.exports = new BaseCLIProvider({
   name: "copilot",
-
-  async chat(messages, options = {}) {
-    const prompt = formatMessages(messages);
-    const args = ["copilot", "explain", prompt];
-
-    return new Promise((resolve, reject) => {
-      const proc = spawn("gh", args, {
-        shell: true,
-        env: { ...process.env, GH_PROMPT: "disable" },
-      });
-      let stdout = "";
-      let stderr = "";
-
-      proc.stdout.on("data", (chunk) => (stdout += chunk));
-      proc.stderr.on("data", (chunk) => (stderr += chunk));
-
-      proc.on("close", (code) => {
-        if (code !== 0) {
-          return reject(new Error(`gh copilot exited with code ${code}: ${stderr}`));
-        }
-        resolve(makeResponse("copilot", stdout.trim()));
-      });
-
-      proc.on("error", (err) => {
-        reject(new Error(`Failed to spawn gh copilot: ${err.message}. Install with: gh extension install github/gh-copilot`));
-      });
-    });
+  command: "copilot",
+  buildArgs(prompt, model) {
+    // Use text format for non-streaming — simpler and avoids JSON parsing overhead
+    const args = ["-p", prompt, "-s", "--output-format", "text"];
+    if (model) args.push("--model", model);
+    return args;
   },
-
-  chatStream(messages, options = {}) {
-    const prompt = formatMessages(messages);
-    const args = ["copilot", "explain", prompt];
-    return spawn("gh", args, {
-      shell: true,
-      env: { ...process.env, GH_PROMPT: "disable" },
-    });
+  buildStreamArgs(prompt, model) {
+    // Use json format for streaming — provides incremental delta events
+    const args = ["-p", prompt, "-s", "--output-format", "json"];
+    if (model) args.push("--model", model);
+    return args;
   },
-};
+  parseOutput(stdout) {
+    // text format: plain text response
+    return stdout.trim();
+  },
+  parseStreamChunk(line) {
+    // json format JSONL: {"type":"assistant.message_delta","data":{"deltaContent":"..."}}
+    try {
+      const obj = JSON.parse(line);
+      if (obj.type === "assistant.message_delta" && obj.data?.deltaContent) {
+        return obj.data.deltaContent;
+      }
+    } catch {
+      // skip non-JSON lines
+    }
+    return null;
+  },
+});

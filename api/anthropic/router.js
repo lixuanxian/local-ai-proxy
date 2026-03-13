@@ -1,4 +1,7 @@
 const { Router } = require("express");
+const config = require("../../lib/config");
+const { resolveProvider, anthropicToInternal, buildMessageContent, logMessageAttachments } = require("../../lib/utils");
+const { buildContextWindow, compressConversation } = require("../../lib/context");
 
 module.exports = function createAnthropicRouter(providerRegistry) {
   const router = Router();
@@ -6,9 +9,9 @@ module.exports = function createAnthropicRouter(providerRegistry) {
   // Messages endpoint (Anthropic-compatible)
   router.post("/v1/messages", async (req, res) => {
     try {
-      const { model, messages, system, stream, provider: providerName } = req.body;
+      const { model, messages, system, stream, provider: providerName, session_id } = req.body;
 
-      if (!messages || !Array.isArray(messages) || messages.length === 0) {
+      if (!session_id && (!messages || !Array.isArray(messages) || messages.length === 0)) {
         return res.status(400).json({
           type: "error",
           error: {
@@ -30,26 +33,23 @@ module.exports = function createAnthropicRouter(providerRegistry) {
         if (systemText) unifiedMessages.push({ role: "system", content: systemText });
       }
 
-      for (const msg of messages) {
-        let content;
-        if (typeof msg.content === "string") {
-          content = msg.content;
-        } else if (Array.isArray(msg.content)) {
-          content = msg.content
-            .map((block) => {
-              if (block.type === "text") return block.text;
-              if (block.type === "image") return "[image]";
-              return JSON.stringify(block);
-            })
-            .join("\n");
-        } else {
-          content = String(msg.content);
-        }
+      for (const msg of (messages || [])) {
+        const content = anthropicToInternal(msg.content);
         unifiedMessages.push({ role: msg.role, content });
       }
 
       const resolvedName = providerRegistry.resolve(providerName, model);
-      const provider = providerRegistry.get(resolvedName);
+      let provider;
+
+      // Try DB-configured provider first (supports custom base_url/api_key)
+      const dbProvider = config.getProvider(resolvedName) || config.getDefaultProvider();
+      if (dbProvider && dbProvider.base_url) {
+        provider = resolveProvider(dbProvider, providerRegistry);
+      }
+      // Fallback to built-in registry
+      if (!provider) {
+        provider = providerRegistry.get(resolvedName);
+      }
 
       if (!provider) {
         return res.status(400).json({
@@ -61,7 +61,54 @@ module.exports = function createAnthropicRouter(providerRegistry) {
         });
       }
 
-      console.log(`[${new Date().toISOString()}] (messages API) ${resolvedName} | ${model || "default"} | messages: ${unifiedMessages.length}`);
+      // Session support
+      let chatMessages = unifiedMessages;
+      let sessionInfo = null;
+
+      if (session_id) {
+        let conv = config.getConversation(session_id);
+        if (!conv) {
+          config.saveConversation({ id: session_id, title: "API Session" });
+          conv = config.getConversation(session_id);
+        }
+
+        // Save the last user message
+        if (unifiedMessages.length > 0) {
+          const lastUserMsg = [...unifiedMessages].reverse().find(m => m.role === "user");
+          if (lastUserMsg) {
+            const attachments = req.fileAttachments || null;
+            config.saveMessage({
+              conversation_id: session_id,
+              role: "user",
+              content: lastUserMsg.content,
+              attachments,
+            });
+            if (conv.title === "API Session" || conv.title === "New Chat") {
+              config.updateConversationTitle(session_id, lastUserMsg.content.slice(0, 40));
+            }
+          }
+        }
+
+        let contextResult = buildContextWindow(session_id, { systemPrompt: conv.system_prompt });
+
+        if (contextResult.contextInfo.compressRecommended && conv.auto_compress) {
+          try {
+            await compressConversation(session_id, provider, model);
+            contextResult = buildContextWindow(session_id, { systemPrompt: conv.system_prompt });
+          } catch (err) {
+            console.error(`[SESSION] Auto-compress failed for session=${session_id}: ${err.message}`);
+          }
+        }
+
+        chatMessages = contextResult.messages.map(m => ({
+          role: m.role,
+          content: m.attachments ? buildMessageContent(m.content, m.attachments) : m.content,
+        }));
+        sessionInfo = { session_id, ...contextResult.contextInfo };
+      }
+
+      console.log(`[${new Date().toISOString()}] (messages API) ${resolvedName} | ${model || "default"} | messages: ${chatMessages.length}${session_id ? ` | session: ${session_id}` : ""}`);
+      logMessageAttachments("Anthropic", chatMessages);
 
       // Streaming (Anthropic SSE format)
       if (stream) {
@@ -87,9 +134,11 @@ module.exports = function createAnthropicRouter(providerRegistry) {
         res.write(`event: content_block_start\ndata: ${JSON.stringify({ type: "content_block_start", index: 0, content_block: { type: "text", text: "" } })}\n\n`);
 
         try {
-          const emitter = provider.chatStream(unifiedMessages, { model });
+          const emitter = provider.chatStream(chatMessages, { model });
+          let fullResponse = "";
 
           const onText = (text) => {
+            fullResponse += text;
             const delta = {
               type: "content_block_delta",
               index: 0,
@@ -99,6 +148,9 @@ module.exports = function createAnthropicRouter(providerRegistry) {
           };
 
           const onDone = () => {
+            if (session_id && fullResponse) {
+              config.saveMessage({ conversation_id: session_id, role: "assistant", content: fullResponse });
+            }
             res.write(`event: content_block_stop\ndata: ${JSON.stringify({ type: "content_block_stop", index: 0 })}\n\n`);
             res.write(`event: message_delta\ndata: ${JSON.stringify({ type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 0 } })}\n\n`);
             res.write(`event: message_stop\ndata: ${JSON.stringify({ type: "message_stop" })}\n\n`);
@@ -106,6 +158,9 @@ module.exports = function createAnthropicRouter(providerRegistry) {
           };
 
           const onError = (err) => {
+            if (session_id && fullResponse) {
+              config.saveMessage({ conversation_id: session_id, role: "assistant", content: fullResponse });
+            }
             res.write(`event: error\ndata: ${JSON.stringify({ type: "error", error: { message: err.message } })}\n\n`);
             res.end();
           };
@@ -127,10 +182,14 @@ module.exports = function createAnthropicRouter(providerRegistry) {
       }
 
       // Non-streaming
-      const result = await provider.chat(unifiedMessages, { model });
+      const result = await provider.chat(chatMessages, { model });
       const content = result.choices?.[0]?.message?.content || "";
 
-      res.json({
+      if (session_id && content) {
+        config.saveMessage({ conversation_id: session_id, role: "assistant", content });
+      }
+
+      const response = {
         id: `msg_${Date.now()}`,
         type: "message",
         role: "assistant",
@@ -142,7 +201,11 @@ module.exports = function createAnthropicRouter(providerRegistry) {
           input_tokens: result.usage?.prompt_tokens || 0,
           output_tokens: result.usage?.completion_tokens || 0,
         },
-      });
+      };
+
+      if (sessionInfo) response.session = sessionInfo;
+
+      res.json(response);
     } catch (err) {
       console.error(`[ERROR] ${err.message}`);
       res.status(500).json({

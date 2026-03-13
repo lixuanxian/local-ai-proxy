@@ -1,7 +1,16 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm run build)"
+      "Bash(npm *)",
+      "Bash(codex *)",
+      "Bash(gemini *)",
+      "Bash(copilot *)",
+      "Bash(claude *)",
+      "Bash(node *)",
+      "Bash(curl *)",
+      "Bash(timeout *)",
+      "Bash(PORT *)",
+      "WebSearch"
     ]
   }
 }

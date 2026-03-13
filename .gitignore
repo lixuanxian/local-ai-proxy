@@ -5,3 +5,4 @@ public/assets/
 dist/
 .DS_Store
 *.log
+settings.local.json

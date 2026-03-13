@@ -1,17 +1,30 @@
 import { useEffect, useState } from 'react';
-import { Switch, message, Input, Button, Tag, Tooltip } from 'antd';
+import { Switch, message, Input, Button, Tag, Radio, Modal } from 'antd';
 import {
   SaveOutlined,
-  KeyOutlined,
-  CopyOutlined,
-  GithubOutlined,
+  SafetyOutlined,
+  ThunderboltOutlined,
 } from '@ant-design/icons';
 import { api } from '../api';
+
+const shortcuts = [
+  { keys: '1', desc: 'Go to Dashboard' },
+  { keys: '2', desc: 'Go to Chat' },
+  { keys: '3', desc: 'Go to Providers' },
+  { keys: '4', desc: 'Go to Logs' },
+  { keys: '5', desc: 'Go to Apps' },
+  { keys: '6', desc: 'Go to API' },
+  { keys: '7', desc: 'Go to Settings' },
+  { keys: 't', desc: 'Toggle dark/light theme' },
+  { keys: 'b', desc: 'Toggle sidebar' },
+  { keys: 'Ctrl+K', desc: 'Open command palette' },
+];
 
 export default function Settings() {
   const [settings, setSettings] = useState(null);
   const [loading, setLoading] = useState(true);
   const [port, setPort] = useState('');
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -60,6 +73,23 @@ export default function Settings() {
         </div>
       </div>
 
+      <div
+        className="settings-section"
+        style={{ cursor: 'pointer', marginBottom: 20 }}
+        onClick={() => setShortcutsOpen(true)}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <ThunderboltOutlined style={{ fontSize: 18, color: 'var(--primary)' }} />
+            <div>
+              <div className="settings-section-title" style={{ marginBottom: 0 }}>Keyboard Shortcuts</div>
+              <div className="settings-section-desc" style={{ marginBottom: 0 }}>Navigate quickly using your keyboard</div>
+            </div>
+          </div>
+          <span style={{ color: 'var(--text-tertiary)', fontSize: 18 }}>&rsaquo;</span>
+        </div>
+      </div>
+
       <div className="settings-section">
         <div className="settings-section-title">General</div>
         <div className="settings-section-desc">Core proxy configuration</div>
@@ -102,99 +132,45 @@ export default function Settings() {
       <div className="settings-section">
         <div className="settings-section-title">
           <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <KeyOutlined /> Keyboard Shortcuts
+            <SafetyOutlined /> CORS Control
           </span>
         </div>
-        <div className="settings-section-desc">Navigate quickly using your keyboard</div>
+        <div className="settings-section-desc">Control cross-origin API access from external domains</div>
 
-        {[
-          { keys: '1', desc: 'Go to Dashboard' },
-          { keys: '2', desc: 'Go to Providers' },
-          { keys: '3', desc: 'Go to Logs' },
-          { keys: '4', desc: 'Go to Apps' },
-          { keys: '5', desc: 'Go to Docker' },
-          { keys: '6', desc: 'Go to Settings' },
-          { keys: 't', desc: 'Toggle dark/light theme' },
-          { keys: 'b', desc: 'Toggle sidebar' },
-          { keys: 'Ctrl+K', desc: 'Open command palette' },
-        ].map((shortcut) => (
+        <div className="settings-row">
+          <div>
+            <div className="settings-row-label">CORS Mode</div>
+            <div className="settings-row-desc">
+              {settings?.cors_mode === 'controlled'
+                ? 'New origins require manual approval before API access is granted'
+                : 'All origins are automatically allowed and tracked'}
+            </div>
+          </div>
+          <Radio.Group
+            value={settings?.cors_mode || 'allow_all'}
+            onChange={(e) => updateSetting('cors_mode', e.target.value)}
+            size="small"
+          >
+            <Radio.Button value="allow_all">Allow All</Radio.Button>
+            <Radio.Button value="controlled">Controlled</Radio.Button>
+          </Radio.Group>
+        </div>
+      </div>
+
+      <Modal
+        title={<span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><ThunderboltOutlined /> Keyboard Shortcuts</span>}
+        open={shortcutsOpen}
+        onCancel={() => setShortcutsOpen(false)}
+        footer={null}
+        width={420}
+      >
+        {shortcuts.map((shortcut) => (
           <div key={shortcut.keys} className="settings-row">
             <div className="settings-row-label">{shortcut.desc}</div>
             <span className="kbd">{shortcut.keys}</span>
           </div>
         ))}
-      </div>
-
-      <div className="settings-section">
-        <div className="settings-section-title">API Endpoints</div>
-        <div className="settings-section-desc">Available API endpoints for your applications</div>
-
-        {[
-          { endpoint: '/v1/chat/completions', format: 'OpenAI', color: 'blue' },
-          { endpoint: '/v1/messages', format: 'Anthropic', color: 'orange' },
-          { endpoint: '/v1/models', format: 'OpenAI', color: 'blue' },
-          { endpoint: '/v1/providers', format: 'General', color: 'purple' },
-        ].map((ep) => (
-          <div key={ep.endpoint} className="settings-row">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--text-primary)', fontWeight: 500 }}>
-                {ep.endpoint}
-              </span>
-              <Tag color={ep.color} style={{ fontSize: 10 }}>{ep.format}</Tag>
-            </div>
-            <Tooltip title="Copy full URL">
-              <Button
-                size="small"
-                icon={<CopyOutlined />}
-                onClick={() => {
-                  navigator.clipboard.writeText(`http://localhost:${settings?.port || 3199}${ep.endpoint}`);
-                  message.success('Copied!');
-                }}
-              >
-                Copy
-              </Button>
-            </Tooltip>
-          </div>
-        ))}
-      </div>
-
-      <div className="settings-section">
-        <div className="settings-section-title">Quick Start</div>
-        <div className="settings-section-desc">Example curl commands to test the proxy</div>
-
-        {[
-          {
-            label: 'OpenAI Chat',
-            cmd: `curl http://localhost:${settings?.port || 3199}/v1/chat/completions \\
-  -H "Content-Type: application/json" \\
-  -d '{"model": "auto", "messages": [{"role": "user", "content": "Hello!"}]}'`,
-          },
-          {
-            label: 'Anthropic Chat',
-            cmd: `curl http://localhost:${settings?.port || 3199}/v1/messages \\
-  -H "Content-Type: application/json" \\
-  -d '{"model": "auto", "messages": [{"role": "user", "content": "Hello!"}]}'`,
-          },
-        ].map((example) => (
-          <div key={example.label} style={{ marginBottom: 16 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-              <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)' }}>{example.label}</span>
-              <Button
-                size="small"
-                onClick={() => {
-                  navigator.clipboard.writeText(example.cmd);
-                  message.success('Copied!');
-                }}
-              >
-                Copy
-              </Button>
-            </div>
-            <pre className="code-block" style={{ fontSize: 11.5, maxHeight: 100 }}>
-              {example.cmd}
-            </pre>
-          </div>
-        ))}
-      </div>
+      </Modal>
 
       <div style={{
         textAlign: 'center',

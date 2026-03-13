@@ -1,7 +1,7 @@
 const http = require("http");
 const https = require("https");
 const { EventEmitter } = require("events");
-const { makeResponse } = require("../lib/utils");
+const { makeResponse, toAnthropicMessages } = require("../lib/utils");
 
 /**
  * Generic Anthropic-compatible API provider.
@@ -19,13 +19,24 @@ class ClaudeCompatProvider {
     return url.protocol === "https:" ? https : http;
   }
 
-  async chat(messages, options = {}) {
-    const model = options.model || this.defaultModel;
+  _buildUrl(path) {
+    const base = this.baseUrl.replace(/\/+$/, "");
+    const baseObj = new URL(base);
+    const basePath = baseObj.pathname.replace(/\/+$/, "");
+    if (basePath !== "" && path.startsWith(basePath)) {
+      return new URL(`${baseObj.origin}${path}`);
+    }
+    return new URL(`${base}${path}`);
+  }
 
-    // Separate system messages
-    const systemMsgs = messages.filter((m) => m.role === "system");
-    const nonSystemMsgs = messages.filter((m) => m.role !== "system");
-    const systemText = systemMsgs.map((m) => m.content).join("\n") || undefined;
+  async chat(messages, options = {}) {
+    const model = (options.model && options.model !== 'auto') ? options.model : this.defaultModel;
+
+    // Convert multimodal content to Anthropic format
+    const converted = toAnthropicMessages(messages);
+    const systemMsgs = converted.filter((m) => m.role === "system");
+    const nonSystemMsgs = converted.filter((m) => m.role !== "system");
+    const systemText = systemMsgs.map((m) => typeof m.content === "string" ? m.content : "").join("\n") || undefined;
 
     const body = JSON.stringify({
       model,
@@ -35,8 +46,10 @@ class ClaudeCompatProvider {
       stream: false,
     });
 
-    const url = new URL("/v1/messages", this.baseUrl);
+    const url = this._buildUrl("/v1/messages");
     const transport = this._getTransport(url);
+
+    console.log(`[API:${this.name}] POST ${url.href} model=${model}`);
 
     return new Promise((resolve, reject) => {
       const headers = {
@@ -49,6 +62,10 @@ class ClaudeCompatProvider {
         let data = "";
         res.on("data", (chunk) => (data += chunk));
         res.on("end", () => {
+          console.log(`[API:${this.name}] status=${res.statusCode}, body=${data.slice(0, 300)}`);
+          if (res.statusCode >= 400) {
+            return reject(new Error(`Anthropic API returned HTTP ${res.statusCode}: ${data.slice(0, 300)}`));
+          }
           try {
             const parsed = JSON.parse(data);
             if (parsed.error) {
@@ -72,11 +89,13 @@ class ClaudeCompatProvider {
   }
 
   chatStream(messages, options = {}) {
-    const model = options.model || this.defaultModel;
+    const model = (options.model && options.model !== 'auto') ? options.model : this.defaultModel;
 
-    const systemMsgs = messages.filter((m) => m.role === "system");
-    const nonSystemMsgs = messages.filter((m) => m.role !== "system");
-    const systemText = systemMsgs.map((m) => m.content).join("\n") || undefined;
+    // Convert multimodal content to Anthropic format
+    const converted = toAnthropicMessages(messages);
+    const systemMsgs = converted.filter((m) => m.role === "system");
+    const nonSystemMsgs = converted.filter((m) => m.role !== "system");
+    const systemText = systemMsgs.map((m) => typeof m.content === "string" ? m.content : "").join("\n") || undefined;
 
     const body = JSON.stringify({
       model,
@@ -86,8 +105,10 @@ class ClaudeCompatProvider {
       stream: true,
     });
 
-    const url = new URL("/v1/messages", this.baseUrl);
+    const url = this._buildUrl("/v1/messages");
     const transport = this._getTransport(url);
+
+    console.log(`[API:${this.name}] stream POST ${url.href} model=${model}`);
 
     const headers = {
       "Content-Type": "application/json",
