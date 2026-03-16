@@ -9,8 +9,13 @@ module.exports = new BaseAPIProvider({
   apiKey: OPENAI_KEY,
   chatPath: "/v1/chat/completions",
 
-  buildBody(messages, model, stream) {
-    return { model: model || "gpt-4", messages, stream };
+  buildBody(messages, model, stream, options = {}) {
+    const body = { model: model || "gpt-4", messages, stream };
+    if (options.tools && options.tools.length > 0) {
+      body.tools = options.tools;
+      if (options.tool_choice) body.tool_choice = options.tool_choice;
+    }
+    return body;
   },
 
   parseResponse(data) {

@@ -149,9 +149,9 @@ local-ai-proxy/
 
 Install the providers you want to use:
 
+- **GitHub Copilot**: `npm install @github/copilot -g && copilot login`(requires GitHub Copilot access)
 - **Claude CLI**: [claude.ai](https://claude.ai) (requires access to Claude)
 - **Gemini CLI**: [ai.google.dev](https://ai.google.dev) (requires access to Gemini)
 - **Ollama**: [ollama.com](https://ollama.com)
 - **OpenAI-compatible**: LM Studio, text-generation-webui, vLLM, etc.
-- **GitHub Copilot**: `npm install copilot`
 - **Docker** (optional): for sandbox isolation

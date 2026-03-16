@@ -16,15 +16,21 @@ import {
 import { api } from '../api';
 import { StatCardSkeleton, TableSkeleton } from '../components/Skeleton';
 
+// SQLite datetime('now') returns UTC without 'Z' — add it so JS parses correctly
+function parseUtcTimestamp(ts) {
+  if (!ts) return null;
+  return new Date(ts.includes('Z') || ts.includes('+') ? ts : ts.replace(' ', 'T') + 'Z');
+}
+
 function timeAgo(timestamp) {
   if (!timestamp) return '-';
   const now = new Date();
-  const t = new Date(timestamp);
+  const t = parseUtcTimestamp(timestamp);
   const diff = Math.floor((now - t) / 1000);
   if (diff < 60) return `${diff}s ago`;
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  return t.toLocaleDateString();
+  return t.toLocaleString();
 }
 
 export default function Logs() {
@@ -105,7 +111,7 @@ export default function Logs() {
     {
       title: 'Time', dataIndex: 'timestamp', key: 'timestamp', width: 130,
       render: (v) => (
-        <Tooltip title={v}>
+        <Tooltip title={parseUtcTimestamp(v)?.toLocaleString() ?? v}>
           <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{timeAgo(v)}</span>
         </Tooltip>
       ),
@@ -295,7 +301,7 @@ export default function Logs() {
             <div className="log-detail-row">
               <div className="log-detail-item">
                 <label>Time</label>
-                <span>{detailRecord.timestamp}</span>
+                <span>{parseUtcTimestamp(detailRecord.timestamp)?.toLocaleString() ?? detailRecord.timestamp}</span>
               </div>
               <div className="log-detail-item">
                 <label>Provider</label>

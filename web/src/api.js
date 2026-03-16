@@ -31,6 +31,8 @@ export const api = {
   setDefaultProvider: (id) => request(`/api/providers/${id}/default`, { method: 'PUT' }),
   testProvider: (id) => request(`/api/providers/${id}/test`, { method: 'POST' }),
   bulkToggleProviders: (ids, enabled) => request('/api/providers/bulk/toggle', { method: 'POST', body: { ids, enabled } }),
+  toggleProvider: (id, enabled) => request(`/api/providers/${id}/toggle`, { method: 'PUT', body: { enabled } }),
+  updateProviderPriority: (id, priority) => request(`/api/providers/${id}/priority`, { method: 'PUT', body: { priority } }),
 
   // Logs
   getLogs: (params) => {
@@ -131,6 +133,28 @@ export const api = {
   updateUser: (id, data) => request(`/api/users/${id}`, { method: 'PUT', body: data }),
   changeUserPassword: (id, password) => request(`/api/users/${id}/password`, { method: 'PUT', body: { password } }),
   deleteUser: (id) => request(`/api/users/${id}`, { method: 'DELETE' }),
+
+  // Models
+  getModels: () => request('/api/models'),
+  getModelMappings: () => request('/api/models/mappings'),
+  getProviderModels: (providerId) => request(`/api/models/provider/${providerId}`),
+  createModelMapping: (data) => request('/api/models/mappings', { method: 'POST', body: data }),
+  updateModelMapping: (id, data) => request(`/api/models/mappings/${id}`, { method: 'PUT', body: data }),
+  updateModelMappingPriority: (id, priority) => request(`/api/models/mappings/${id}/priority`, { method: 'PUT', body: { priority } }),
+  reorderModelMappings: (updates) => request('/api/models/mappings/reorder', { method: 'PUT', body: { updates } }),
+  deleteModelMapping: (id) => request(`/api/models/mappings/${id}`, { method: 'DELETE' }),
+  deleteModelMappingsBulk: (ids) => request('/api/models/mappings/bulk-delete', { method: 'POST', body: { ids } }),
+  fetchProviderModels: (providerId) => request(`/api/providers/${providerId}/fetch-models`, { method: 'POST' }),
+
+  // MCP Servers
+  getMcpServers: () => request('/api/mcp-servers'),
+  createMcpServer: (data) => request('/api/mcp-servers', { method: 'POST', body: data }),
+  updateMcpServer: (id, data) => request(`/api/mcp-servers/${id}`, { method: 'PUT', body: data }),
+  deleteMcpServer: (id) => request(`/api/mcp-servers/${id}`, { method: 'DELETE' }),
+  toggleMcpServer: (id, enabled) => request(`/api/mcp-servers/${id}/toggle`, { method: 'POST', body: { enabled } }),
+  testMcpServer: (id) => request(`/api/mcp-servers/${id}/test`, { method: 'POST' }),
+  getMcpServerTools: (id) => request(`/api/mcp-servers/${id}/tools`),
+  getMcpStatus: () => request('/api/mcp-servers/status'),
 
   // File upload
   uploadFile: async (file) => {

@@ -9,6 +9,25 @@ module.exports = function createOpenAIRouter(providerRegistry) {
 
   // List models (OpenAI-compatible)
   router.get("/v1/models", (req, res) => {
+    // Return model mappings if available, otherwise fall back to provider names
+    const mappings = config.getAllModelMappings();
+    if (mappings.length > 0) {
+      // Deduplicate by model_name — one entry per unique model
+      const seen = new Set();
+      const models = [];
+      for (const m of mappings) {
+        if (seen.has(m.model_name)) continue;
+        seen.add(m.model_name);
+        models.push({
+          id: m.model_name,
+          object: "model",
+          owned_by: m.provider_name || m.provider_id,
+        });
+      }
+      return res.json({ object: "list", data: models });
+    }
+
+    // Fallback: list provider names as models
     const names = providerRegistry.listNames();
     res.json({
       object: "list",
@@ -23,7 +42,7 @@ module.exports = function createOpenAIRouter(providerRegistry) {
   // Chat completions (OpenAI-compatible)
   router.post("/v1/chat/completions", async (req, res) => {
     try {
-      const { messages, provider: providerName, model, stream, session_id } = req.body;
+      const { messages, provider: providerName, model, stream, session_id, tools, tool_choice } = req.body;
 
       if (!session_id && (!messages || !Array.isArray(messages) || messages.length === 0)) {
         return res.status(400).json({
@@ -34,11 +53,16 @@ module.exports = function createOpenAIRouter(providerRegistry) {
         });
       }
 
-      const resolvedName = providerRegistry.resolve(providerName, model);
+      const resolved = providerRegistry.resolve(providerName, model);
+      const resolvedName = resolved.name;
+      // If model wasn't matched by any provider's patterns, don't pass it downstream
+      // (especially important for CLI providers that would get an unsupported --model flag)
+      const effectiveModel = resolved.modelMatched ? model : undefined;
       let provider;
 
       // Try DB-configured provider first (supports custom base_url/api_key)
-      const dbProvider = config.getProvider(resolvedName) || config.getDefaultProvider();
+      const rawDbProvider = config.getProvider(resolvedName) || config.getDefaultProvider();
+      const dbProvider = rawDbProvider && rawDbProvider.enabled ? rawDbProvider : null;
       if (dbProvider && dbProvider.base_url) {
         provider = resolveProvider(dbProvider, providerRegistry);
       }
@@ -93,8 +117,9 @@ module.exports = function createOpenAIRouter(providerRegistry) {
           systemPrompt: conv.system_prompt,
         });
 
-        // Auto-compress if recommended
-        if (contextResult.contextInfo.compressRecommended && conv.auto_compress) {
+        // Auto-compress if recommended (skip for CLI providers)
+        const isCLI = !!provider.command;
+        if (!isCLI && contextResult.contextInfo.compressRecommended && conv.auto_compress) {
           try {
             await compressConversation(session_id, provider, model);
             contextResult = buildContextWindow(session_id, { systemPrompt: conv.system_prompt });
@@ -123,7 +148,7 @@ module.exports = function createOpenAIRouter(providerRegistry) {
         const streamStart = Date.now();
 
         try {
-          const emitter = provider.chatStream(chatMessages, { model });
+          const emitter = provider.chatStream(chatMessages, { model: effectiveModel, session_id, tools, tool_choice });
 
           const onText = (text) => {
             fullResponse += text;
@@ -153,8 +178,8 @@ module.exports = function createOpenAIRouter(providerRegistry) {
               requestBody: { messages: chatMessages.length, model, provider: providerName, stream: true },
               responseBody: { content_length: fullResponse.length },
               statusCode: 200,
-              inputTokens: 0,
-              outputTokens: 0,
+              inputTokens: estimateMsgTokens(chatMessages),
+              outputTokens: Math.ceil(fullResponse.length / 4),
               latencyMs: Date.now() - streamStart,
             });
             res.write("data: [DONE]\n\n");
@@ -195,7 +220,7 @@ module.exports = function createOpenAIRouter(providerRegistry) {
       }
 
       // Non-streaming
-      const result = await provider.chat(chatMessages, { model });
+      const result = await provider.chat(chatMessages, { model: effectiveModel, session_id, tools, tool_choice });
 
       // Save assistant response to session
       if (session_id) {

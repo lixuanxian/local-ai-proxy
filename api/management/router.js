@@ -1,10 +1,187 @@
 const { Router } = require("express");
+const { execFile } = require("child_process");
 const config = require("../../lib/config");
 const bcrypt = require("bcryptjs");
 const { requireAuth, parseCookies } = require("../../lib/auth");
-const { queryLogs, getStats, getHourlyStats, getProviderStats, getModelStats, clearLogs } = require("../../lib/logger");
+const { queryLogs, getStats, getHourlyStats, getProviderStats, getModelStats, clearLogs, logRequest } = require("../../lib/logger");
 const { buildContextWindow, compressConversation } = require("../../lib/context");
-const { resolveProvider, buildMessageContent, logMessageAttachments } = require("../../lib/utils");
+const { resolveProvider, buildMessageContent, logMessageAttachments, mcpToolToOpenAI, mcpToolToAnthropic } = require("../../lib/utils");
+const mcpClientManager = require("../../lib/mcp-client");
+
+// Estimate token count from messages (fallback when provider doesn't return usage)
+function estimateTokens(text) {
+  if (!text) return 0;
+  return Math.ceil(text.length / 4);
+}
+function estimateInputTokens(msgs) {
+  let chars = 0;
+  for (const m of (msgs || [])) {
+    if (typeof m.content === "string") chars += m.content.length;
+    else if (Array.isArray(m.content)) {
+      for (const b of m.content) { if (b.text) chars += b.text.length; }
+    }
+  }
+  return Math.ceil(chars / 4);
+}
+
+// CLI provider types and their model detection strategies
+const CLI_TYPES = ['claude-cli', 'copilot-cli', 'codex-cli', 'gemini-cli'];
+
+// Run a CLI command and return stdout
+function runCli(command, args, timeout = 10000) {
+  return new Promise((resolve, reject) => {
+    const env = { ...process.env };
+    delete env.CLAUDECODE;
+    // Use shell:true on Windows so npm-global CLI tools are found
+    execFile(command, args, { timeout, env, shell: process.platform === 'win32' }, (err, stdout, stderr) => {
+      if (err) return reject(err);
+      resolve(stdout);
+    });
+  });
+}
+
+// Parse models from copilot --help output (--model choices line)
+function parseCopilotModels(helpOutput) {
+  // Look for: --model <model>  ... (choices: "model1", "model2", ...)
+  const match = helpOutput.match(/--model\s+<\w+>\s+[^(]*\(choices:\s*([^)]+)\)/);
+  if (!match) return [];
+  // Extract quoted model names
+  const models = [];
+  const regex = /"([^"]+)"/g;
+  let m;
+  while ((m = regex.exec(match[1])) !== null) {
+    models.push(m[1]);
+  }
+  return models;
+}
+
+// Fallback preset models when CLI detection fails
+const CLI_PRESET_MODELS = {
+  'claude-cli': [
+    'claude-opus-4-6', 'claude-sonnet-4-6'
+  ],
+  'gemini-cli': [
+    'gemini-3.1-pro-preview', 'gemini-3-flash-preview',
+    'gemini-2.5-pro', 'gemini-2.5-flash',
+  ],
+  'codex-cli': [
+    'gpt-5.3-codex', 'gpt-5.1-codex-max', 'o3',
+  ],
+};
+
+// Fetch models from CLI provider by parsing --help output
+async function fetchCliModels(providerConfig) {
+  const command = providerConfig.command
+    || (providerConfig.type === 'claude-cli' ? 'claude' : providerConfig.type?.replace('-cli', ''));
+  if (!command) return CLI_PRESET_MODELS[providerConfig.type] || [];
+
+  try {
+    const helpOutput = await runCli(command, ['--help'], 10000);
+
+    // Generic parser: look for --model ... (choices: "m1", "m2", ...)
+    const match = helpOutput.match(/--model\s+<\w+>\s+[^(]*\(choices:\s*([^)]+)\)/);
+    if (match) {
+      const models = [];
+      const regex = /"([^"]+)"/g;
+      let m;
+      while ((m = regex.exec(match[1])) !== null) models.push(m[1]);
+      if (models.length > 0) return models;
+    }
+
+    // Fallback to preset models
+    return CLI_PRESET_MODELS[providerConfig.type] || [];
+  } catch {
+    // CLI not available, use presets
+    return CLI_PRESET_MODELS[providerConfig.type] || [];
+  }
+}
+
+// Fetch available models from a provider's API
+async function fetchProviderModels(providerConfig) {
+  // CLI providers: parse --help output for model choices
+  if (CLI_TYPES.includes(providerConfig.type)) {
+    return fetchCliModels(providerConfig);
+  }
+
+  // Only works for API-type providers with a base_url
+  if (!providerConfig.base_url) return [];
+
+  // Self-fetch protection: skip if base_url points to the proxy itself
+  try {
+    const u = new URL(providerConfig.base_url);
+    const port = u.port || (u.protocol === 'https:' ? '443' : '80');
+    const proxyPort = String(process.env.PORT || 3199);
+    if (['localhost', '127.0.0.1', '0.0.0.0'].includes(u.hostname) && port === proxyPort) {
+      return [];
+    }
+  } catch { /* invalid URL, let it fail naturally */ }
+
+  const isAnthropic = providerConfig.type === 'anthropic-api' || providerConfig.type === 'claude-cli';
+  let baseUrl = providerConfig.base_url.replace(/\/+$/, '');
+
+  // Build auth headers based on provider type
+  const headers = {};
+  if (isAnthropic) {
+    headers['anthropic-version'] = '2023-06-01';
+    if (providerConfig.api_key) {
+      headers['x-api-key'] = providerConfig.api_key;
+    }
+  } else if (providerConfig.api_key) {
+    headers['Authorization'] = `Bearer ${providerConfig.api_key}`;
+  }
+
+  if (isAnthropic) {
+    // Anthropic models API: GET /v1/models with pagination
+    const allModels = [];
+    let afterId = null;
+    try {
+      for (let page = 0; page < 10; page++) {
+        let url = `${baseUrl}/v1/models?limit=100`;
+        if (afterId) url += `&after_id=${encodeURIComponent(afterId)}`;
+        // Avoid double /v1
+        url = url.replace(/\/v1\/v1\//, '/v1/');
+        const resp = await fetch(url, { headers, signal: AbortSignal.timeout(10000) });
+        if (!resp.ok) break;
+        const data = await resp.json();
+        if (data.data && Array.isArray(data.data)) {
+          allModels.push(...data.data.filter(m => m.id));
+        }
+        if (!data.has_more) break;
+        afterId = data.last_id;
+      }
+    } catch { /* fetch failed */ }
+    return allModels;
+  }
+
+  // OpenAI-compatible: try /models and /v1/models
+  const urls = [
+    `${baseUrl}/models`,
+    `${baseUrl}/v1/models`,
+  ];
+  // Deduplicate (if baseUrl already ends with /v1)
+  const uniqueUrls = [...new Set(urls.map(u => u.replace(/\/v1\/v1\//, '/v1/')))];
+
+  for (const url of uniqueUrls) {
+    try {
+      const resp = await fetch(url, {
+        headers,
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!resp.ok) continue;
+      const data = await resp.json();
+      if (data.data && Array.isArray(data.data)) {
+        return data.data.filter(m => m.id);
+      }
+      if (Array.isArray(data.models)) {
+        return data.models;
+      }
+      if (Array.isArray(data)) {
+        return data;
+      }
+    } catch { /* try next URL */ }
+  }
+  return [];
+}
 
 module.exports = function createManagementRouter(providerRegistry) {
   const router = Router();
@@ -165,10 +342,30 @@ module.exports = function createManagementRouter(providerRegistry) {
     res.json(providers.map((p) => ({ ...p, api_key: p.api_key ? "***" : null })));
   });
 
-  router.post("/api/providers", (req, res) => {
+  router.post("/api/providers", async (req, res) => {
     try {
       const id = config.saveProvider(req.body);
-      res.status(201).json({ id, ...config.getProvider(id) });
+      const saved = config.getProvider(id);
+
+      // Auto-fetch models for API providers in the background
+      if (saved.base_url) {
+        fetchProviderModels(saved).then(models => {
+          if (models.length > 0) {
+            const mappings = models.map(m => ({
+              model_name: m.id || m,
+              provider_id: id,
+              priority: 0,
+              source: 'auto',
+            }));
+            config.bulkSaveModelMappings(mappings);
+            console.log(`[MODELS] Auto-fetched ${models.length} models for provider ${saved.name}`);
+          }
+        }).catch(err => {
+          console.log(`[MODELS] Auto-fetch failed for provider ${saved.name}: ${err.message}`);
+        });
+      }
+
+      res.status(201).json({ id, ...saved });
     } catch (err) {
       res.status(400).json({ error: err.message });
     }
@@ -190,6 +387,7 @@ module.exports = function createManagementRouter(providerRegistry) {
   });
 
   router.delete("/api/providers/:id", (req, res) => {
+    config.deleteModelMappingsForProvider(req.params.id);
     config.deleteProvider(req.params.id);
     res.json({ ok: true });
   });
@@ -213,6 +411,24 @@ module.exports = function createManagementRouter(providerRegistry) {
     if (typeof enabled !== 'boolean') return res.status(400).json({ error: "enabled must be a boolean" });
     config.bulkToggleProviders(ids, enabled);
     res.json({ ok: true, updated: ids.length });
+  });
+
+  router.put("/api/providers/:id/toggle", (req, res) => {
+    const provider = config.getProvider(req.params.id);
+    if (!provider) return res.status(404).json({ error: "Provider not found" });
+    const { enabled } = req.body;
+    if (typeof enabled !== 'boolean') return res.status(400).json({ error: "enabled must be a boolean" });
+    config.toggleProvider(req.params.id, enabled);
+    res.json({ ok: true, id: req.params.id, enabled });
+  });
+
+  router.put("/api/providers/:id/priority", (req, res) => {
+    const provider = config.getProvider(req.params.id);
+    if (!provider) return res.status(404).json({ error: "Provider not found" });
+    const { priority } = req.body;
+    if (typeof priority !== 'number') return res.status(400).json({ error: "priority must be a number" });
+    config.updateProviderPriority(req.params.id, priority);
+    res.json({ ok: true, id: req.params.id, priority });
   });
 
   router.post("/api/providers/:id/test", async (req, res) => {
@@ -508,16 +724,27 @@ module.exports = function createManagementRouter(providerRegistry) {
 
     let provider = null;
     let resolvedName = null;
+    let effectiveModel = model;
     if (providerId) {
       const providerConfig = config.getProvider(providerId);
-      if (providerConfig) {
+      if (providerConfig && providerConfig.enabled) {
         resolvedName = providerConfig.id;
         provider = resolveProvider(providerConfig, providerRegistry);
       }
     }
     if (!provider) {
-      resolvedName = providerRegistry.getDefault();
-      provider = providerRegistry.get(resolvedName);
+      // Use model-based resolution which respects enabled status
+      const resolved = providerRegistry.resolve(null, model);
+      resolvedName = resolved.name;
+      // If model wasn't matched, don't pass it to the provider (especially CLI)
+      if (!resolved.modelMatched) effectiveModel = undefined;
+      const fallbackConfig = config.getProvider(resolvedName);
+      if (fallbackConfig && fallbackConfig.enabled) {
+        provider = resolveProvider(fallbackConfig, providerRegistry);
+      }
+      if (!provider) {
+        provider = providerRegistry.get(resolvedName);
+      }
     }
 
     if (!provider) {
@@ -531,8 +758,10 @@ module.exports = function createManagementRouter(providerRegistry) {
       mode,
     });
 
-    // Auto-compress if recommended and enabled
-    if (contextResult.contextInfo.compressRecommended && conv.auto_compress) {
+    // Auto-compress if recommended and enabled globally (skip for CLI providers — they're single-turn)
+    const isCLI = !!provider.command;
+    const globalAutoCompress = config.getSetting("auto_compress") === "true";
+    if (!isCLI && contextResult.contextInfo.compressRecommended && globalAutoCompress) {
       try {
         await compressConversation(req.params.id, provider, model);
         contextResult = buildContextWindow(req.params.id, {
@@ -546,14 +775,44 @@ module.exports = function createManagementRouter(providerRegistry) {
     }
 
     // Apply multimodal content building (images, files) to context messages
-    const chatMessages = contextResult.messages.map(m => ({
-      role: m.role,
-      content: m.attachments ? buildMessageContent(m.content, m.attachments) : m.content,
-    }));
+    // For CLI providers, strip summary messages — CLI is single-turn, only needs system prompt + last user message
+    const chatMessages = contextResult.messages
+      .filter(m => !(isCLI && m.is_summary))
+      .map(m => ({
+        role: m.role,
+        content: m.attachments ? buildMessageContent(m.content, m.attachments) : m.content,
+      }));
     const contextInfo = contextResult.contextInfo;
 
-    console.log(`[CHAT] conv=${req.params.id}, provider=${resolvedName}, model=${model}, messages=${chatMessages.length}/${contextInfo.totalMessages}, tokens=~${contextInfo.estimatedTokens}, stream=${!!stream}`);
+    // Gather MCP tools from enabled servers (skip for CLI providers)
+    let mcpTools = [];
+    let formattedTools;
+    if (!isCLI) {
+      try {
+        const enabledServers = config.getAllMcpServers().filter(s => s.enabled);
+        if (enabledServers.length > 0) {
+          await mcpClientManager.ensureAllConnected(enabledServers);
+          mcpTools = mcpClientManager.getAllTools();
+        }
+      } catch (err) {
+        console.log(`[CHAT] MCP tool discovery failed: ${err.message}`);
+      }
+    }
+
+    // Determine provider type for tool format conversion
+    const providerConfig = providerId ? config.getProvider(providerId) : null;
+    const isAnthropicType = providerConfig?.type === 'anthropic-api' || providerConfig?.type === 'claude-cli'
+      || resolvedName === 'claude-cli';
+    if (mcpTools.length > 0) {
+      formattedTools = mcpTools.map(t => isAnthropicType ? mcpToolToAnthropic(t) : mcpToolToOpenAI(t));
+      console.log(`[CHAT] ${mcpTools.length} MCP tools available (${isAnthropicType ? 'anthropic' : 'openai'} format)`);
+    }
+
+    const chatOptions = { model: effectiveModel, temperature: conv.temperature, max_tokens: conv.max_tokens, tools: formattedTools, session_id: req.params.id };
+
+    console.log(`[CHAT] conv=${req.params.id}, provider=${resolvedName}, model=${model}, messages=${chatMessages.length}/${contextInfo.totalMessages}, tokens=~${contextInfo.estimatedTokens}, stream=${!!stream}, tools=${mcpTools.length}`);
     logMessageAttachments("CHAT", chatMessages);
+    const requestStart = Date.now();
 
     // Streaming response
     if (stream) {
@@ -568,40 +827,167 @@ module.exports = function createManagementRouter(providerRegistry) {
       });
 
       let fullResponse = "";
+      // Track tool calls during streaming
+      let pendingToolCalls = [];
+      let toolInputBuffers = {};
 
       try {
-        const emitter = provider.chatStream(chatMessages, { model, temperature: conv.temperature, max_tokens: conv.max_tokens });
+        const runStream = (msgs, opts) => {
+          const emitter = provider.chatStream(msgs, opts);
 
-        const onText = (text) => {
-          fullResponse += text;
-          res.write(`data: ${JSON.stringify({ type: "text", text, messageId: assistantMsgId })}\n\n`);
+          const onText = (text) => {
+            fullResponse += text;
+            res.write(`data: ${JSON.stringify({ type: "text", text, messageId: assistantMsgId })}\n\n`);
+          };
+
+          const onToolUseStart = (data) => {
+            pendingToolCalls.push({ id: data.id, name: data.name, index: data.index });
+            toolInputBuffers[data.index] = "";
+            res.write(`data: ${JSON.stringify({ type: "tool_call_start", tool_name: data.name, tool_call_id: data.id })}\n\n`);
+          };
+
+          const onToolUseDelta = (data) => {
+            if (toolInputBuffers[data.index] !== undefined) {
+              toolInputBuffers[data.index] += data.partial_json;
+            }
+          };
+
+          const onDone = async () => {
+            // If there are pending tool calls, execute them and continue
+            if (pendingToolCalls.length > 0) {
+              console.log(`[CHAT] Stream: executing ${pendingToolCalls.length} tool call(s)...`);
+
+              // Build tool_calls array for context
+              const toolCallsForContext = pendingToolCalls.map(tc => {
+                let args = {};
+                try { args = JSON.parse(toolInputBuffers[tc.index] || "{}"); } catch { /* empty */ }
+                return {
+                  id: tc.id,
+                  type: "function",
+                  function: { name: tc.name, arguments: JSON.stringify(args) },
+                };
+              });
+
+              // Save assistant message with tool_calls
+              config.updateMessageContent(assistantMsgId, JSON.stringify({ text: fullResponse || null, tool_calls: toolCallsForContext }));
+
+              // Add assistant + tool results to messages for continuation
+              const continueMsgs = [...msgs, {
+                role: "assistant",
+                content: fullResponse || null,
+                tool_calls: toolCallsForContext,
+              }];
+
+              for (const tc of toolCallsForContext) {
+                const fn = tc.function;
+                let toolArgs = {};
+                try { toolArgs = JSON.parse(fn.arguments); } catch { /* empty */ }
+
+                const toolInfo = mcpClientManager.findTool(fn.name);
+                let toolResult;
+                try {
+                  toolResult = await mcpClientManager.callTool(toolInfo.serverId, fn.name, toolArgs);
+                } catch (err) {
+                  toolResult = { content: [{ type: "text", text: `Error: ${err.message}` }], isError: true };
+                }
+                const resultText = toolResult.content?.map(c => c.text || "").join("\n") || "";
+
+                // Save tool result message
+                config.saveMessage({
+                  conversation_id: req.params.id,
+                  role: "tool",
+                  content: resultText,
+                  attachments: { tool_call_id: tc.id, tool_name: fn.name },
+                });
+
+                res.write(`data: ${JSON.stringify({ type: "tool_result", tool_call_id: tc.id, tool_name: fn.name, result: resultText.slice(0, 500) })}\n\n`);
+
+                if (isAnthropicType) {
+                  continueMsgs.push({
+                    role: "user",
+                    content: [{
+                      type: "tool_result",
+                      tool_use_id: tc.id,
+                      content: resultText,
+                    }],
+                  });
+                } else {
+                  continueMsgs.push({
+                    role: "tool",
+                    tool_call_id: tc.id,
+                    content: resultText,
+                  });
+                }
+              }
+
+              // Reset state for continuation
+              pendingToolCalls = [];
+              toolInputBuffers = {};
+              fullResponse = "";
+
+              // Create new assistant message for continuation
+              const contMsgId = config.saveMessage({
+                conversation_id: req.params.id,
+                role: "assistant",
+                content: "",
+              });
+
+              // Re-stream with tool results
+              const contEmitter = provider.chatStream(continueMsgs, chatOptions);
+              const onContText = (text) => {
+                fullResponse += text;
+                res.write(`data: ${JSON.stringify({ type: "text", text, messageId: contMsgId })}\n\n`);
+              };
+              const onContDone = () => {
+                config.updateMessageContent(contMsgId, fullResponse);
+                config.updateMessageTokenEstimate(contMsgId, Math.ceil(fullResponse.length / 4));
+                logRequest({ apiFormat: "chat", providerId: resolvedName, model, requestBody: { messages: chatMessages.length, model }, responseBody: { content_length: fullResponse.length }, statusCode: 200, inputTokens: estimateInputTokens(continueMsgs), outputTokens: estimateTokens(fullResponse), latencyMs: Date.now() - requestStart });
+                const updatedCtx = buildContextWindow(req.params.id, {}).contextInfo;
+                res.write(`data: ${JSON.stringify({ type: "done", messageId: contMsgId, contextInfo: updatedCtx })}\n\n`);
+                res.end();
+              };
+              const onContError = (err) => {
+                config.updateMessageContent(contMsgId, fullResponse || `Error: ${err.message}`);
+                logRequest({ apiFormat: "chat", providerId: resolvedName, model, statusCode: 500, latencyMs: Date.now() - requestStart, error: err.message });
+                res.write(`data: ${JSON.stringify({ type: "error", error: err.message })}\n\n`);
+                res.end();
+              };
+              contEmitter.on("data", onContText);
+              contEmitter.on("end", onContDone);
+              contEmitter.on("error", onContError);
+              return;
+            }
+
+            config.updateMessageContent(assistantMsgId, fullResponse);
+            config.updateMessageTokenEstimate(assistantMsgId, Math.ceil(fullResponse.length / 4));
+            logRequest({ apiFormat: "chat", providerId: resolvedName, model, requestBody: { messages: chatMessages.length, model }, responseBody: { content_length: fullResponse.length }, statusCode: 200, inputTokens: estimateInputTokens(msgs), outputTokens: estimateTokens(fullResponse), latencyMs: Date.now() - requestStart });
+            const updatedCtx = buildContextWindow(req.params.id, {}).contextInfo;
+            res.write(`data: ${JSON.stringify({ type: "done", messageId: assistantMsgId, contextInfo: updatedCtx })}\n\n`);
+            res.end();
+          };
+
+          const onError = (err) => {
+            console.error(`[CHAT] Stream error for conv=${req.params.id}: ${err.message}`);
+            config.updateMessageContent(assistantMsgId, fullResponse || `Error: ${err.message}`);
+            logRequest({ apiFormat: "chat", providerId: resolvedName, model, statusCode: 500, latencyMs: Date.now() - requestStart, error: err.message });
+            res.write(`data: ${JSON.stringify({ type: "error", error: err.message })}\n\n`);
+            res.end();
+          };
+
+          if (emitter.stdout) {
+            emitter.stdout.on("data", (chunk) => onText(chunk.toString()));
+            emitter.on("close", onDone);
+            emitter.on("error", onError);
+          } else {
+            emitter.on("data", onText);
+            emitter.on("tool_use_start", onToolUseStart);
+            emitter.on("tool_use_delta", onToolUseDelta);
+            emitter.on("end", onDone);
+            emitter.on("error", onError);
+          }
         };
 
-        const onDone = () => {
-          config.updateMessageContent(assistantMsgId, fullResponse);
-          config.updateMessageTokenEstimate(assistantMsgId, Math.ceil(fullResponse.length / 4));
-          // Rebuild context info after response is saved
-          const updatedCtx = buildContextWindow(req.params.id, {}).contextInfo;
-          res.write(`data: ${JSON.stringify({ type: "done", messageId: assistantMsgId, contextInfo: updatedCtx })}\n\n`);
-          res.end();
-        };
-
-        const onError = (err) => {
-          console.error(`[CHAT] Stream error for conv=${req.params.id}: ${err.message}`);
-          config.updateMessageContent(assistantMsgId, fullResponse || `Error: ${err.message}`);
-          res.write(`data: ${JSON.stringify({ type: "error", error: err.message })}\n\n`);
-          res.end();
-        };
-
-        if (emitter.stdout) {
-          emitter.stdout.on("data", (chunk) => onText(chunk.toString()));
-          emitter.on("close", onDone);
-          emitter.on("error", onError);
-        } else {
-          emitter.on("data", onText);
-          emitter.on("end", onDone);
-          emitter.on("error", onError);
-        }
+        runStream(chatMessages, chatOptions);
       } catch (err) {
         console.error(`[CHAT] Stream setup error for conv=${req.params.id}: ${err.message}`);
         config.updateMessageContent(assistantMsgId, `Error: ${err.message}`);
@@ -611,9 +997,79 @@ module.exports = function createManagementRouter(providerRegistry) {
       return;
     }
 
-    // Non-streaming response
+    // Non-streaming response with MCP tool loop
     try {
-      const result = await provider.chat(chatMessages, { model, temperature: conv.temperature, max_tokens: conv.max_tokens });
+      const MAX_TOOL_ITERATIONS = 10;
+      let iterationMessages = [...chatMessages];
+      let result = await provider.chat(iterationMessages, chatOptions);
+
+      for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
+        const toolCalls = result?.choices?.[0]?.message?.tool_calls;
+        if (!toolCalls || toolCalls.length === 0) break;
+
+        console.log(`[CHAT] Tool loop iteration ${i + 1}: ${toolCalls.length} tool call(s)`);
+
+        // Save assistant message with tool_calls
+        config.saveMessage({
+          conversation_id: req.params.id,
+          role: "assistant",
+          content: JSON.stringify({ text: result.choices[0].message.content, tool_calls: toolCalls }),
+        });
+
+        // Add assistant message with tool_calls to context
+        iterationMessages.push({
+          role: "assistant",
+          content: result.choices[0].message.content,
+          tool_calls: toolCalls,
+        });
+
+        // Execute each tool call
+        for (const tc of toolCalls) {
+          const fn = tc.function || tc;
+          const toolName = fn.name;
+          let toolArgs;
+          try { toolArgs = typeof fn.arguments === "string" ? JSON.parse(fn.arguments) : fn.arguments; } catch { toolArgs = {}; }
+
+          const toolInfo = mcpClientManager.findTool(toolName);
+          let toolResult;
+          try {
+            toolResult = await mcpClientManager.callTool(toolInfo.serverId, toolName, toolArgs);
+          } catch (err) {
+            toolResult = { content: [{ type: "text", text: `Error: ${err.message}` }], isError: true };
+          }
+
+          const resultText = toolResult.content?.map(c => c.text || "").join("\n") || "";
+
+          config.saveMessage({
+            conversation_id: req.params.id,
+            role: "tool",
+            content: resultText,
+            attachments: { tool_call_id: tc.id, tool_name: toolName },
+          });
+
+          // Add tool result to context — format depends on provider type
+          if (isAnthropicType) {
+            iterationMessages.push({
+              role: "user",
+              content: [{
+                type: "tool_result",
+                tool_use_id: tc.id,
+                content: resultText,
+              }],
+            });
+          } else {
+            iterationMessages.push({
+              role: "tool",
+              tool_call_id: tc.id,
+              content: resultText,
+            });
+          }
+        }
+
+        // Send back to AI with tool results
+        result = await provider.chat(iterationMessages, chatOptions);
+      }
+
       const assistantContent = result?.choices?.[0]?.message?.content
         || result?.content?.[0]?.text
         || (typeof result === "string" ? result : JSON.stringify(result));
@@ -625,6 +1081,7 @@ module.exports = function createManagementRouter(providerRegistry) {
       });
 
       const updatedCtx = buildContextWindow(req.params.id, {}).contextInfo;
+      logRequest({ apiFormat: "chat", providerId: resolvedName, model, requestBody: { messages: chatMessages.length, model }, responseBody: { content_length: assistantContent.length }, statusCode: 200, inputTokens: result.usage?.prompt_tokens || result.usage?.input_tokens || estimateInputTokens(chatMessages), outputTokens: result.usage?.completion_tokens || result.usage?.output_tokens || estimateTokens(assistantContent), latencyMs: Date.now() - requestStart });
       res.json({
         userMessage: { id: userMsgId, role: "user", content: userContent },
         assistantMessage: { id: assistantMsgId, role: "assistant", content: assistantContent },
@@ -632,6 +1089,7 @@ module.exports = function createManagementRouter(providerRegistry) {
       });
     } catch (err) {
       console.error(`[CHAT] Non-stream error for conv=${req.params.id}: ${err.message}`);
+      logRequest({ apiFormat: "chat", providerId: resolvedName, model, statusCode: 500, latencyMs: Date.now() - requestStart, error: err.message });
       res.status(500).json({ error: err.message });
     }
   });
@@ -764,6 +1222,91 @@ module.exports = function createManagementRouter(providerRegistry) {
     res.json({ ok: true });
   });
 
+  // ---- Model Mappings ----
+  router.get("/api/models", (req, res) => {
+    const mappings = config.getAllModelMappings();
+    // Group by model name
+    const grouped = {};
+    for (const m of mappings) {
+      if (!grouped[m.model_name]) grouped[m.model_name] = [];
+      grouped[m.model_name].push(m);
+    }
+    res.json({ models: grouped, distinct: config.getDistinctModels() });
+  });
+
+  router.get("/api/models/mappings", (req, res) => {
+    res.json(config.getAllModelMappings());
+  });
+
+  router.get("/api/models/provider/:providerId", (req, res) => {
+    res.json(config.getModelMappingsForProvider(req.params.providerId));
+  });
+
+  router.post("/api/models/mappings", (req, res) => {
+    const { model_name, provider_id, priority, source } = req.body;
+    if (!model_name || !provider_id) return res.status(400).json({ error: "model_name and provider_id are required" });
+    const id = config.saveModelMapping({ model_name, provider_id, priority, source });
+    res.status(201).json({ id, model_name, provider_id, priority: priority ?? 0, source: source || 'manual' });
+  });
+
+  router.put("/api/models/mappings/:id", (req, res) => {
+    const { model_name, provider_id, priority } = req.body;
+    config.updateModelMapping(req.params.id, { model_name, provider_id, priority });
+    res.json({ ok: true });
+  });
+
+  router.put("/api/models/mappings/:id/priority", (req, res) => {
+    const { priority } = req.body;
+    if (typeof priority !== 'number') return res.status(400).json({ error: "priority must be a number" });
+    config.updateModelMappingPriority(req.params.id, priority);
+    res.json({ ok: true });
+  });
+
+  router.put("/api/models/mappings/reorder", (req, res) => {
+    const { updates } = req.body;
+    if (!Array.isArray(updates)) return res.status(400).json({ error: "updates must be an array of {id, priority}" });
+    for (const u of updates) {
+      config.updateModelMappingPriority(u.id, u.priority);
+    }
+    res.json({ ok: true });
+  });
+
+  router.delete("/api/models/mappings/:id", (req, res) => {
+    config.deleteModelMapping(req.params.id);
+    res.json({ ok: true });
+  });
+
+  router.post("/api/models/mappings/bulk-delete", (req, res) => {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: "ids must be a non-empty array" });
+    const deleted = config.deleteModelMappingsBulk(ids);
+    res.json({ ok: true, deleted });
+  });
+
+  // Fetch models from a provider (API: /v1/models endpoint, CLI: --help parsing)
+  router.post("/api/providers/:id/fetch-models", async (req, res) => {
+    const providerConfig = config.getProvider(req.params.id);
+    if (!providerConfig) return res.status(404).json({ error: "Provider not found" });
+
+    try {
+      const models = await fetchProviderModels(providerConfig);
+      if (models.length === 0) return res.json({ models: [], saved: 0 });
+
+      // Save as model mappings
+      const mappings = models.map((m, i) => ({
+        model_name: m.id || m,
+        provider_id: req.params.id,
+        priority: 0,
+        source: 'auto',
+      }));
+      config.bulkSaveModelMappings(mappings);
+
+      res.json({ models: models.map(m => m.id || m), saved: mappings.length });
+    } catch (err) {
+      res.json({ models: [], saved: 0, error: err.message });
+    }
+  });
+
   // ---- File Upload ----
   router.post("/api/upload", (req, res) => {
     // Handled by multer middleware mounted in server.js
@@ -775,6 +1318,79 @@ module.exports = function createManagementRouter(providerRegistry) {
       mimetype: req.file.mimetype,
       url: `/uploads/${req.file.filename}`,
     });
+  });
+
+  // ---- MCP Servers ----
+  router.get("/api/mcp-servers", (req, res) => {
+    const servers = config.getAllMcpServers().map(s => ({
+      ...s,
+      headers: s.headers ? "***" : null, // Mask headers (may contain auth)
+    }));
+    // Include connection status
+    const status = mcpClientManager.getStatus();
+    res.json(servers.map(s => ({
+      ...s,
+      connection: status[s.id] || { status: "disconnected", toolCount: 0 },
+    })));
+  });
+
+  router.post("/api/mcp-servers", (req, res) => {
+    const { name, url, transport_type, headers, enabled } = req.body;
+    if (!name || !url) return res.status(400).json({ error: "name and url are required" });
+    try {
+      const id = config.saveMcpServer({ name, url, transport_type, headers, enabled });
+      res.status(201).json(config.getMcpServer(id));
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  router.put("/api/mcp-servers/:id", (req, res) => {
+    const existing = config.getMcpServer(req.params.id);
+    if (!existing) return res.status(404).json({ error: "MCP server not found" });
+    config.saveMcpServer({ ...existing, ...req.body, id: req.params.id });
+    res.json(config.getMcpServer(req.params.id));
+  });
+
+  router.delete("/api/mcp-servers/:id", async (req, res) => {
+    await mcpClientManager.disconnect(req.params.id);
+    config.deleteMcpServer(req.params.id);
+    res.json({ ok: true });
+  });
+
+  router.post("/api/mcp-servers/:id/toggle", async (req, res) => {
+    const server = config.getMcpServer(req.params.id);
+    if (!server) return res.status(404).json({ error: "MCP server not found" });
+    const enabled = req.body.enabled !== undefined ? req.body.enabled : !server.enabled;
+    config.toggleMcpServer(req.params.id, enabled);
+    if (!enabled) await mcpClientManager.disconnect(req.params.id);
+    res.json(config.getMcpServer(req.params.id));
+  });
+
+  router.post("/api/mcp-servers/:id/test", async (req, res) => {
+    const server = config.getMcpServer(req.params.id);
+    if (!server) return res.status(404).json({ error: "MCP server not found" });
+    try {
+      const result = await mcpClientManager.testConnection(server);
+      res.json(result);
+    } catch (err) {
+      res.json({ success: false, tools: [], error: err.message });
+    }
+  });
+
+  router.get("/api/mcp-servers/:id/tools", async (req, res) => {
+    const server = config.getMcpServer(req.params.id);
+    if (!server) return res.status(404).json({ error: "MCP server not found" });
+    try {
+      await mcpClientManager.ensureConnected(server);
+      res.json(mcpClientManager.getTools(server.id));
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.get("/api/mcp-servers/status", (req, res) => {
+    res.json(mcpClientManager.getStatus());
   });
 
   return router;

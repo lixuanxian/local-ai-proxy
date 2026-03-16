@@ -203,6 +203,7 @@ export default function EmbedChat() {
       const res = await fetch('/v1/chat/completions', {
         method: 'POST',
         headers,
+        credentials: 'include',
         body: JSON.stringify({
           model: cfg.model || 'auto',
           provider: cfg.provider || undefined,

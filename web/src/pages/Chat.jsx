@@ -33,6 +33,7 @@ import {
   CompressOutlined,
   DatabaseOutlined,
   InfoCircleOutlined,
+  ToolOutlined,
 } from '@ant-design/icons';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -102,7 +103,7 @@ export default function Chat() {
   const [editTitleValue, setEditTitleValue] = useState('');
   const [convListLoading, setConvListLoading] = useState(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [chatMode, setChatMode] = useState('edit'); // 'plan' or 'edit'
+  const [chatMode, setChatMode] = useState('chat'); // 'chat', 'plan' or 'edit'
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [systemPrompt, setSystemPrompt] = useState('');
   const [temperature, setTemperature] = useState(null);
@@ -117,7 +118,6 @@ export default function Chat() {
   const [contextInfo, setContextInfo] = useState(null);
   const [compressing, setCompressing] = useState(false);
   const [contextLimit, setContextLimit] = useState(10);
-  const [autoCompress, setAutoCompress] = useState(true);
   const messagesEndRef = useRef(null);
   const messagesContainerRef = useRef(null);
   const inputRef = useRef(null);
@@ -191,7 +191,7 @@ export default function Chat() {
       setTemperature(data.temperature ?? null);
       setMaxTokens(data.max_tokens ?? null);
       setContextLimit(data.context_limit ?? 10);
-      setAutoCompress(data.auto_compress !== 0 && data.auto_compress !== false);
+      // auto_compress is now a global setting in Settings page
       if (data.contextInfo) setContextInfo(data.contextInfo);
     } catch {
       message.error('Failed to load conversation');
@@ -390,6 +390,31 @@ export default function Chat() {
                 }
                 return msgs;
               });
+            } else if (data.type === 'tool_call_start') {
+              setMessages(prev => {
+                const msgs = [...prev];
+                const last = msgs[msgs.length - 1];
+                if (last && last.role === 'assistant') {
+                  const toolCalls = [...(last.tool_calls || []), { name: data.name, arguments: data.arguments, status: 'calling' }];
+                  msgs[msgs.length - 1] = { ...last, tool_calls: toolCalls };
+                }
+                return msgs;
+              });
+            } else if (data.type === 'tool_result') {
+              setMessages(prev => {
+                const msgs = [...prev];
+                const last = msgs[msgs.length - 1];
+                if (last && last.role === 'assistant' && last.tool_calls) {
+                  const toolCalls = [...last.tool_calls];
+                  const tc = toolCalls.find(t => t.name === data.name && t.status === 'calling');
+                  if (tc) {
+                    tc.status = data.error ? 'error' : 'done';
+                    tc.result = data.error || (typeof data.result === 'string' ? data.result : JSON.stringify(data.result));
+                  }
+                  msgs[msgs.length - 1] = { ...last, tool_calls: toolCalls };
+                }
+                return msgs;
+              });
             } else if (data.type === 'done') {
               if (data.contextInfo) setContextInfo(data.contextInfo);
             } else if (data.type === 'error') {
@@ -573,8 +598,41 @@ export default function Chat() {
   }, [searchText]);
 
   // Render message content with markdown
+  const renderToolCalls = (toolCalls) => {
+    if (!toolCalls || toolCalls.length === 0) return null;
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, margin: '8px 0' }}>
+        {toolCalls.map((tc, i) => (
+          <div key={i} style={{
+            padding: '6px 10px', borderRadius: 'var(--radius-sm)',
+            border: '1px solid var(--border-color)', background: 'var(--bg-secondary)',
+            fontSize: 12,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <ToolOutlined style={{ color: 'var(--primary)' }} />
+              <span style={{ fontWeight: 500 }}>{tc.name}</span>
+              {tc.status === 'calling' && <Spin size="small" style={{ marginLeft: 4 }} />}
+              {tc.status === 'done' && <CheckOutlined style={{ color: 'var(--success-color, #52c41a)', marginLeft: 4 }} />}
+              {tc.status === 'error' && <CloseOutlined style={{ color: 'var(--error-color, #ff4d4f)', marginLeft: 4 }} />}
+            </div>
+            {tc.arguments && (
+              <div style={{ marginTop: 4, color: 'var(--text-tertiary)', fontFamily: 'monospace', fontSize: 11, whiteSpace: 'pre-wrap', maxHeight: 80, overflow: 'auto' }}>
+                {typeof tc.arguments === 'string' ? tc.arguments : JSON.stringify(tc.arguments, null, 2)}
+              </div>
+            )}
+            {tc.result && (
+              <div style={{ marginTop: 4, color: tc.status === 'error' ? 'var(--error-color, #ff4d4f)' : 'var(--text-secondary)', fontFamily: 'monospace', fontSize: 11, whiteSpace: 'pre-wrap', maxHeight: 120, overflow: 'auto', borderTop: '1px solid var(--border-color)', paddingTop: 4 }}>
+                {tc.result.length > 500 ? tc.result.slice(0, 500) + '...' : tc.result}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   const renderMessageContent = (msg) => {
-    if (msg.role === 'assistant' && !msg.content && streaming) {
+    if (msg.role === 'assistant' && !msg.content && !msg.tool_calls && streaming) {
       return (
         <div className="chat-typing-indicator">
           <span>Thinking</span>
@@ -582,12 +640,16 @@ export default function Chat() {
         </div>
       );
     }
-    if (!msg.content) return null;
 
     return (
-      <div className="chat-markdown">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
-      </div>
+      <>
+        {renderToolCalls(msg.tool_calls)}
+        {msg.content && (
+          <div className="chat-markdown">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+          </div>
+        )}
+      </>
     );
   };
 
@@ -921,17 +983,6 @@ export default function Chat() {
                       Max messages sent to AI per request (older messages get summarized)
                     </div>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: 13 }}>Auto-compress</span>
-                    <Switch
-                      size="small"
-                      checked={autoCompress}
-                      onChange={val => { setAutoCompress(val); saveConvSettings({ auto_compress: val }); }}
-                    />
-                  </div>
-                  <div className="chat-settings-hint">
-                    Automatically summarize older messages when context limit is reached
-                  </div>
                 </div>
 
               </div>
@@ -1073,6 +1124,20 @@ export default function Chat() {
               {/* Toolbar: skills + mode */}
               <div className="chat-input-toolbar">
                 <div className="chat-skills-bar">
+                  {skills.filter(s => s.enabled).length > 0 && (
+                    <Tooltip title={selectedSkills.length === skills.filter(s => s.enabled).length ? 'Deselect All' : 'Select All'}>
+                      <div
+                        className={`chat-skill-chip ${selectedSkills.length === skills.filter(s => s.enabled).length ? 'active' : ''}`}
+                        onClick={() => {
+                          const enabledIds = skills.filter(s => s.enabled).map(s => s.id);
+                          setSelectedSkills(prev => prev.length === enabledIds.length ? [] : enabledIds);
+                        }}
+                      >
+                        <ThunderboltOutlined />
+                        <span>All</span>
+                      </div>
+                    </Tooltip>
+                  )}
                   {skills.filter(s => s.enabled).map(s => (
                     <div
                       key={s.id}
@@ -1094,6 +1159,13 @@ export default function Chat() {
                 </div>
 
                 <div className="chat-mode-toggle">
+                  <div
+                    className={`chat-mode-btn ${chatMode === 'chat' ? 'active' : ''}`}
+                    onClick={() => setChatMode('chat')}
+                  >
+                    <MessageOutlined />
+                    <span>Chat</span>
+                  </div>
                   <div
                     className={`chat-mode-btn ${chatMode === 'plan' ? 'active' : ''}`}
                     onClick={() => setChatMode('plan')}

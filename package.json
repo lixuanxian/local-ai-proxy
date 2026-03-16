@@ -5,13 +5,15 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "npx concurrently \"npm run dev:server\" \"npm run dev:web\"",
+    "dev": "concurrently  \"npm run dev:server\" \"npm run dev:web\"",
     "dev:server": "node --watch server.js",
     "dev:web": "cd web && npm run dev",
     "build:web": "cd web && npm run build",
     "setup": "npm install && cd web && npm install && npm run build"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.76",
+    "@modelcontextprotocol/sdk": "^1.12.1",
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^12.6.2",
     "express": "^4.21.0",

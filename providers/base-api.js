@@ -47,7 +47,7 @@ class BaseAPIProvider {
 
   async chat(messages, options = {}) {
     const model = (options.model && options.model !== 'auto') ? options.model : undefined;
-    const body = JSON.stringify(this._buildBody(messages, model, false));
+    const body = JSON.stringify(this._buildBody(messages, model, false, options));
     const url = this._buildUrl(this.chatPath);
     const transport = this._getTransport(url);
 
@@ -91,7 +91,7 @@ class BaseAPIProvider {
 
   chatStream(messages, options = {}) {
     const model = (options.model && options.model !== 'auto') ? options.model : undefined;
-    const body = JSON.stringify(this._buildBody(messages, model, true));
+    const body = JSON.stringify(this._buildBody(messages, model, true, options));
     const url = this._buildUrl(this.chatPath);
     const transport = this._getTransport(url);
 
@@ -101,10 +101,28 @@ class BaseAPIProvider {
     if (this.apiKey) headers["Authorization"] = `Bearer ${this.apiKey}`;
 
     const emitter = new EventEmitter();
+    let ended = false;
+
+    const emitEnd = () => {
+      if (ended) return;
+      ended = true;
+      emitter.emit("end");
+    };
 
     const req = transport.request(url, { method: "POST", headers });
 
     req.on("response", (res) => {
+      // Handle HTTP errors
+      if (res.statusCode >= 400) {
+        let errBody = "";
+        res.on("data", (chunk) => (errBody += chunk));
+        res.on("end", () => {
+          console.error(`[API:${this.name}] stream error status=${res.statusCode}, body=${errBody.slice(0, 300)}`);
+          emitter.emit("error", new Error(`${this.name} returned HTTP ${res.statusCode}: ${errBody.slice(0, 300)}`));
+        });
+        return;
+      }
+
       let buffer = "";
       res.on("data", (chunk) => {
         buffer += chunk.toString();
@@ -115,7 +133,7 @@ class BaseAPIProvider {
           const result = this._parseStreamChunk(line.trim());
           if (!result) continue;
           if (result.done) {
-            emitter.emit("end");
+            emitEnd();
             return;
           }
           if (result.text) {
@@ -123,7 +141,7 @@ class BaseAPIProvider {
           }
         }
       });
-      res.on("end", () => emitter.emit("end"));
+      res.on("end", () => emitEnd());
       res.on("error", (err) => emitter.emit("error", err));
     });
 

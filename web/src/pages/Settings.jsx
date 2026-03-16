@@ -8,6 +8,9 @@ import {
   UserAddOutlined,
   DeleteOutlined,
   KeyOutlined,
+  ApiOutlined,
+  PlusOutlined,
+  EditOutlined,
 } from '@ant-design/icons';
 import { api } from '../api';
 
@@ -38,6 +41,15 @@ export default function Settings() {
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newRole, setNewRole] = useState('admin');
+
+  // MCP Servers state
+  const [mcpServers, setMcpServers] = useState([]);
+  const [mcpModalOpen, setMcpModalOpen] = useState(false);
+  const [mcpEditing, setMcpEditing] = useState(null);
+  const [mcpForm, setMcpForm] = useState({ name: '', url: '', transport_type: 'streamable-http', headers: '' });
+  const [mcpTesting, setMcpTesting] = useState(null);
+  const [mcpToolsOpen, setMcpToolsOpen] = useState(null);
+  const [mcpTools, setMcpTools] = useState([]);
 
   const load = async () => {
     setLoading(true);
@@ -72,6 +84,7 @@ export default function Settings() {
       setUserModalOpen(false);
       setNewUsername(''); setNewPassword(''); setNewRole('admin');
       loadUsers();
+      window.dispatchEvent(new Event('auth:changed'));
     } catch { message.error('Failed to create user'); }
   };
 
@@ -92,6 +105,7 @@ export default function Settings() {
       if (res.error) return message.error(res.error);
       message.success('User deleted');
       loadUsers();
+      window.dispatchEvent(new Event('auth:changed'));
     } catch { message.error('Failed to delete user'); }
   };
 
@@ -100,6 +114,75 @@ export default function Settings() {
       return message.warning('Please create at least one user before enabling authentication');
     }
     await updateSetting('auth_enabled', enabled);
+    window.dispatchEvent(new Event('auth:changed'));
+  };
+
+  // MCP handlers
+  const loadMcpServers = async () => {
+    try {
+      const data = await api.getMcpServers();
+      setMcpServers(Array.isArray(data) ? data : []);
+    } catch { /* ignore */ }
+  };
+
+  useEffect(() => { loadMcpServers(); }, []);
+
+  const handleSaveMcpServer = async () => {
+    if (!mcpForm.name || !mcpForm.url) return message.error('Name and URL are required');
+    try {
+      const payload = { ...mcpForm };
+      if (mcpEditing) {
+        const res = await api.updateMcpServer(mcpEditing.id, payload);
+        if (res.error) return message.error(res.error);
+        message.success('MCP server updated');
+      } else {
+        const res = await api.createMcpServer(payload);
+        if (res.error) return message.error(res.error);
+        message.success('MCP server added');
+      }
+      setMcpModalOpen(false);
+      setMcpEditing(null);
+      loadMcpServers();
+    } catch { message.error('Failed to save MCP server'); }
+  };
+
+  const handleDeleteMcpServer = async (id) => {
+    try {
+      await api.deleteMcpServer(id);
+      message.success('MCP server deleted');
+      loadMcpServers();
+    } catch { message.error('Failed to delete MCP server'); }
+  };
+
+  const handleToggleMcpServer = async (id, enabled) => {
+    try {
+      await api.toggleMcpServer(id, enabled);
+      loadMcpServers();
+    } catch { message.error('Failed to toggle MCP server'); }
+  };
+
+  const handleTestMcpServer = async (id) => {
+    setMcpTesting(id);
+    try {
+      const res = await api.testMcpServer(id);
+      if (res.success) {
+        message.success(`Connected! Found ${res.tools?.length || 0} tools`);
+      } else {
+        message.error(`Connection failed: ${res.error}`);
+      }
+    } catch { message.error('Test failed'); }
+    setMcpTesting(null);
+  };
+
+  const handleViewTools = async (server) => {
+    setMcpToolsOpen(server);
+    try {
+      const res = await api.getMcpServerTools(server.id);
+      setMcpTools(Array.isArray(res) ? res : res.tools || []);
+    } catch {
+      setMcpTools([]);
+      message.error('Failed to load tools');
+    }
   };
 
   const updateSetting = async (key, value) => {
@@ -191,6 +274,90 @@ export default function Settings() {
             </Button>
           </div>
         </div>
+      </div>
+
+      <div className="settings-section">
+        <div className="settings-section-title">Chat</div>
+        <div className="settings-section-desc">Chat conversation settings</div>
+
+        <div className="settings-row">
+          <div>
+            <div className="settings-row-label">Auto-compress</div>
+            <div className="settings-row-desc">Automatically summarize older messages when context limit is reached (API providers only)</div>
+          </div>
+          <Switch
+            checked={settings?.auto_compress === 'true'}
+            onChange={(v) => updateSetting('auto_compress', v)}
+          />
+        </div>
+      </div>
+
+      <div className="settings-section">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <div className="settings-section-title">
+              <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <ApiOutlined /> MCP Servers
+              </span>
+            </div>
+            <div className="settings-section-desc">Connect to Model Context Protocol servers for tool integration</div>
+          </div>
+          <Button
+            size="small"
+            icon={<PlusOutlined />}
+            onClick={() => {
+              setMcpEditing(null);
+              setMcpForm({ name: '', url: '', transport_type: 'streamable-http', headers: '' });
+              setMcpModalOpen(true);
+            }}
+          >
+            Add Server
+          </Button>
+        </div>
+
+        {mcpServers.length === 0 ? (
+          <div style={{ padding: 16, textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 13, border: '1px dashed var(--border-color)', borderRadius: 'var(--radius-sm)', marginTop: 12 }}>
+            No MCP servers configured. Add a server to enable tool use in chat.
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
+            {mcpServers.map(s => (
+              <div key={s.id} style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '10px 12px', borderRadius: 'var(--radius-sm)',
+                border: '1px solid var(--border-color)', background: 'var(--bg-secondary)',
+                opacity: s.enabled ? 1 : 0.5,
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.name}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-tertiary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.url}</div>
+                  </div>
+                  <Tag style={{ fontSize: 10, flexShrink: 0 }}>{s.transport_type}</Tag>
+                </div>
+                <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexShrink: 0 }}>
+                  <Button size="small" onClick={() => handleViewTools(s)}>Tools</Button>
+                  <Button
+                    size="small"
+                    loading={mcpTesting === s.id}
+                    onClick={() => handleTestMcpServer(s.id)}
+                  >
+                    Test
+                  </Button>
+                  <Button size="small" icon={<EditOutlined />} onClick={() => {
+                    setMcpEditing(s);
+                    setMcpForm({ name: s.name, url: s.url, transport_type: s.transport_type, headers: s.headers || '' });
+                    setMcpModalOpen(true);
+                  }} />
+                  <Switch size="small" checked={!!s.enabled} onChange={(v) => handleToggleMcpServer(s.id, v)} />
+                  <Popconfirm title="Delete this MCP server?" onConfirm={() => handleDeleteMcpServer(s.id)} okText="Delete" okButtonProps={{ danger: true }}>
+                    <Button size="small" danger icon={<DeleteOutlined />} />
+                  </Popconfirm>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="settings-section">
@@ -334,6 +501,59 @@ export default function Settings() {
             <span className="kbd">{shortcut.keys}</span>
           </div>
         ))}
+      </Modal>
+
+      {/* MCP Server Modal */}
+      <Modal
+        title={<span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><ApiOutlined /> {mcpEditing ? 'Edit' : 'Add'} MCP Server</span>}
+        open={mcpModalOpen}
+        onCancel={() => { setMcpModalOpen(false); setMcpEditing(null); }}
+        onOk={handleSaveMcpServer}
+        okText={mcpEditing ? 'Save' : 'Add'}
+        width={480}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 16 }}>
+          <Input placeholder="Server name" value={mcpForm.name} onChange={e => setMcpForm(f => ({ ...f, name: e.target.value }))} />
+          <Input placeholder="Server URL (e.g. http://localhost:3001/mcp)" value={mcpForm.url} onChange={e => setMcpForm(f => ({ ...f, url: e.target.value }))} />
+          <div>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>Transport</div>
+            <Radio.Group value={mcpForm.transport_type} onChange={e => setMcpForm(f => ({ ...f, transport_type: e.target.value }))} size="small">
+              <Radio.Button value="streamable-http">Streamable HTTP</Radio.Button>
+              <Radio.Button value="sse">SSE</Radio.Button>
+            </Radio.Group>
+          </div>
+          <Input.TextArea
+            placeholder='Custom headers (JSON, e.g. {"Authorization": "Bearer ..."})'
+            value={mcpForm.headers}
+            onChange={e => setMcpForm(f => ({ ...f, headers: e.target.value }))}
+            autoSize={{ minRows: 2, maxRows: 4 }}
+          />
+        </div>
+      </Modal>
+
+      {/* MCP Tools Modal */}
+      <Modal
+        title={<span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><ApiOutlined /> Tools — {mcpToolsOpen?.name}</span>}
+        open={!!mcpToolsOpen}
+        onCancel={() => { setMcpToolsOpen(null); setMcpTools([]); }}
+        footer={null}
+        width={520}
+      >
+        {mcpTools.length === 0 ? (
+          <div style={{ padding: 16, textAlign: 'center', color: 'var(--text-tertiary)' }}>No tools discovered. Try testing the connection first.</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 400, overflow: 'auto' }}>
+            {mcpTools.map((t, i) => (
+              <div key={i} style={{
+                padding: '8px 12px', borderRadius: 'var(--radius-sm)',
+                border: '1px solid var(--border-color)', background: 'var(--bg-secondary)',
+              }}>
+                <div style={{ fontWeight: 500, fontSize: 13 }}>{t.name}</div>
+                {t.description && <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>{t.description}</div>}
+              </div>
+            ))}
+          </div>
+        )}
       </Modal>
 
       <div style={{

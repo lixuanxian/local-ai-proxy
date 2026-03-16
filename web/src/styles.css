@@ -580,6 +580,8 @@ body {
 
 /* --- Provider Card --- */
 .provider-card {
+  display: flex;
+  flex-direction: column;
   background: var(--bg-card);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);

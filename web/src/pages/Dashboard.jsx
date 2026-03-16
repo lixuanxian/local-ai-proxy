@@ -19,14 +19,14 @@ import { api } from '../api';
 import { QuickAccessCard } from './Apps';
 
 const typeIcons = {
-  'cli': <CodeOutlined />,
+  'claude-cli': <CodeOutlined />,
   'openai-api': <ApiOutlined />,
   'anthropic-api': <RobotOutlined />,
   'gemini-api': <ApiOutlined />,
 };
 
 const typeColors = {
-  'cli': '#6366f1',
+  'claude-cli': '#6366f1',
   'openai-api': '#10b981',
   'anthropic-api': '#f59e0b',
   'gemini-api': '#ef4444',

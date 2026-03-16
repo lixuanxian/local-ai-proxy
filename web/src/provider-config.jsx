@@ -1,11 +1,9 @@
 import { ApiOutlined, CodeOutlined, RobotOutlined } from '@ant-design/icons';
 
 export const providerTypes = [
-  { value: 'cli', label: 'Claude CLI' },
+  { value: 'claude-cli', label: 'Claude CLI' },
   { value: 'copilot-cli', label: 'Copilot CLI' },
   { value: 'codex-cli', label: 'Codex CLI' },
-  { value: 'aider-cli', label: 'Aider CLI' },
-  { value: 'opencode-cli', label: 'OpenCode CLI' },
   { value: 'gemini-cli', label: 'Gemini CLI' },
   { value: 'openai-api', label: 'OpenAI Compatible' },
   { value: 'anthropic-api', label: 'Anthropic Compatible' },
@@ -13,11 +11,9 @@ export const providerTypes = [
 ];
 
 export const typeIcons = {
-  'cli': <CodeOutlined />,
+  'claude-cli': <RobotOutlined />,
   'copilot-cli': <CodeOutlined />,
   'codex-cli': <CodeOutlined />,
-  'aider-cli': <CodeOutlined />,
-  'opencode-cli': <CodeOutlined />,
   'gemini-cli': <CodeOutlined />,
   'openai-api': <ApiOutlined />,
   'anthropic-api': <RobotOutlined />,
@@ -25,19 +21,18 @@ export const typeIcons = {
 };
 
 export const typeColors = {
-  'cli': '#6366f1',
+  'claude-cli': '#8b5cf6',
   'copilot-cli': '#0969da',
   'codex-cli': '#22c55e',
-  'aider-cli': '#a855f7',
-  'opencode-cli': '#06b6d4',
   'gemini-cli': '#f97316',
   'openai-api': '#10b981',
   'anthropic-api': '#f59e0b',
   'gemini-api': '#ef4444',
 };
 
-export const CLI_TYPES = ['cli', 'copilot-cli', 'codex-cli', 'aider-cli', 'opencode-cli', 'gemini-cli'];
+export const CLI_TYPES = ['copilot-cli', 'codex-cli', 'gemini-cli'];
 export const API_TYPES = ['openai-api', 'anthropic-api', 'gemini-api'];
+export const OAUTH_TYPES = ['claude-cli'];
 
 // Base URL presets for API providers — each preset links a service provider to its URL, models, and patterns
 export const BASE_URL_PRESETS = {
@@ -314,10 +309,10 @@ export const BASE_URL_PRESETS = {
 };
 
 export const MODEL_PRESETS = {
-  'cli': [
+  'claude-cli': [
     { label: 'Claude 系列', options: [
-      { value: 'claude-opus-4-6', label: 'Claude Opus 4.6', desc: '最强旗舰模型' },
-      { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6', desc: '平衡性能与速度' },
+      { value: 'claude-opus-4-20250514', label: 'Claude Opus 4', desc: '最强旗舰模型' },
+      { value: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4', desc: '平衡性能与速度' },
       { value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5', desc: '快速低成本' },
     ]},
   ],
@@ -331,10 +326,10 @@ export const MODEL_PRESETS = {
       { value: 'claude-haiku-4.5', label: 'Claude Haiku 4.5', desc: '快速低成本' },
     ]},
     { label: 'GPT 系列', options: [
-      { value: 'gpt-5.4', label: 'GPT-5.4', desc: '最新旗舰' },
-      { value: 'gpt-5.3-codex', label: 'GPT-5.3 Codex', desc: '编程模型' },
-      { value: 'gpt-5.2-codex', label: 'GPT-5.2 Codex', desc: '' },
-      { value: 'gpt-5.2', label: 'GPT-5.2', desc: '' },
+      { value: 'gpt-5.4', label: 'GPT-5.4', desc: '长任务项目级编程' },
+      { value: 'gpt-5.3-codex', label: 'GPT-5.3 Codex', desc: '最强编程模型' },
+      { value: 'gpt-5.2-codex', label: 'GPT-5.2 Codex', desc: '编程优化推理模型' },
+      { value: 'gpt-5.2', label: 'GPT-5.2', desc: '推理模型' },
     ]},
     { label: 'Gemini 系列', options: [
       { value: 'gemini-3-pro-preview', label: 'Gemini 3 Pro Preview', desc: '' },
@@ -342,24 +337,10 @@ export const MODEL_PRESETS = {
   ],
   'codex-cli': [
     { label: 'Codex 模型', options: [
+      { value: 'gpt-5.4', label: 'GPT-5.4', desc: '长任务项目级编程' },
       { value: 'gpt-5.3-codex', label: 'GPT-5.3 Codex', desc: '最强编程模型' },
-      { value: 'gpt-5.1-codex-max', label: 'GPT-5.1 Codex Max', desc: '长任务项目级编程' },
-      { value: 'o3', label: 'o3', desc: '推理模型' },
-    ]},
-  ],
-  'aider-cli': [
-    { label: '常用模型', options: [
-      { value: 'claude-opus-4-6', label: 'Claude Opus 4.6', desc: '最强旗舰' },
-      { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6', desc: '平衡性能与速度' },
-      { value: 'gpt-5.4', label: 'GPT-5.4', desc: '最新旗舰' },
-      { value: 'deepseek-chat', label: 'DeepSeek-V3.2', desc: '推理优先' },
-    ]},
-  ],
-  'opencode-cli': [
-    { label: '常用模型', options: [
-      { value: 'claude-opus-4-6', label: 'Claude Opus 4.6', desc: '最强旗舰' },
-      { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6', desc: '平衡性能与速度' },
-      { value: 'gpt-5.4', label: 'GPT-5.4', desc: '最新旗舰' },
+      { value: 'gpt-5.2-codex', label: 'GPT-5.2 Codex', desc: '编程优化推理模型' },
+      { value: 'gpt-5.2', label: 'GPT-5.2', desc: '推理模型' },
     ]},
   ],
   'gemini-cli': [
@@ -385,11 +366,9 @@ export const MODEL_PRESETS = {
 };
 
 export const DEFAULT_MODELS = {
-  'cli': 'claude-sonnet-4-6',
+  'claude-cli': 'claude-sonnet-4-20250514',
   'copilot-cli': 'claude-sonnet-4.6',
   'codex-cli': '',
-  'aider-cli': 'claude-opus-4-6',
-  'opencode-cli': 'claude-opus-4-6',
   'gemini-cli': 'gemini-3-flash-preview',
   'openai-api': 'gpt-5.2-codex',
   'anthropic-api': 'claude-sonnet-4-6',
@@ -397,12 +376,21 @@ export const DEFAULT_MODELS = {
 };
 
 export const DEFAULT_COMMANDS = {
-  'cli': 'claude',
   'copilot-cli': 'copilot',
   'codex-cli': 'codex',
-  'aider-cli': 'aider',
-  'opencode-cli': 'opencode',
   'gemini-cli': 'gemini',
+};
+
+// Default model_patterns for CLI provider types.
+// Only providers with specific model associations should have patterns.
+// copilot-cli is a multi-provider tool — it should NOT have patterns,
+// so model names like "claude-sonnet-4.6" won't incorrectly route to it.
+export const DEFAULT_MODEL_PATTERNS = {
+  'claude-cli': ['claude', 'sonnet', 'opus', 'haiku'],
+  'gemini-cli': ['gemini', 'gemma'],
+  'codex-cli': ['codex'],
+  // Multi-provider tool — no model patterns
+  'copilot-cli': [],
 };
 
 export function getDefaultModel(type) {

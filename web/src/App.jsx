@@ -16,6 +16,7 @@ import {
   MessageOutlined,
   CopyOutlined,
   SafetyOutlined,
+  RobotOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
   UserOutlined,
@@ -34,12 +35,14 @@ const Apps = lazy(() => import('./pages/Apps'));
 const Settings = lazy(() => import('./pages/Settings'));
 const ApiPage = lazy(() => import('./pages/Api'));
 const EmbedChat = lazy(() => import('./pages/EmbedChat'));
+const Models = lazy(() => import('./pages/Models'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 
 const menuItems = [
   { key: '/', icon: <DashboardOutlined />, label: 'Dashboard' },
   { key: '/chat', icon: <MessageOutlined />, label: 'Chat' },
   { key: '/providers', icon: <ApiOutlined />, label: 'Providers' },
+  { key: '/models', icon: <RobotOutlined />, label: 'Models' },
   { key: '/logs', icon: <FileTextOutlined />, label: 'Logs' },
   { key: '/apps', icon: <AppstoreOutlined />, label: 'Apps' },
   { key: '/config-api', icon: <ApiOutlined />, label: 'API' },
@@ -50,6 +53,7 @@ const pageNames = {
   '/': 'Dashboard',
   '/chat': 'Chat',
   '/providers': 'Providers',
+  '/models': 'Models',
   '/logs': 'Logs',
   '/apps': 'Apps',
   '/config-api': 'API',
@@ -98,7 +102,13 @@ export default function App() {
     // Listen for 401 events from api.js
     const handleUnauth = () => { setUser(null); };
     window.addEventListener('auth:unauthorized', handleUnauth);
-    return () => window.removeEventListener('auth:unauthorized', handleUnauth);
+    // Re-check auth when settings change (e.g. auth toggled in Settings page)
+    const onAuthChanged = () => checkAuth();
+    window.addEventListener('auth:changed', onAuthChanged);
+    return () => {
+      window.removeEventListener('auth:unauthorized', handleUnauth);
+      window.removeEventListener('auth:changed', onAuthChanged);
+    };
   }, []);
 
   // Check for API token warnings
@@ -117,6 +127,9 @@ export default function App() {
       } catch { /* ignore */ }
     };
     checkTokens();
+    const onTokensChanged = () => checkTokens();
+    window.addEventListener('tokens:changed', onTokensChanged);
+    return () => window.removeEventListener('tokens:changed', onTokensChanged);
   }, [authChecked, user]);
 
   useEffect(() => {
@@ -183,10 +196,11 @@ export default function App() {
       '1': '/',
       '2': '/chat',
       '3': '/providers',
-      '4': '/logs',
-      '5': '/apps',
-      '6': '/config-api',
-      '7': '/settings',
+      '4': '/models',
+      '5': '/logs',
+      '6': '/apps',
+      '7': '/config-api',
+      '8': '/settings',
     };
 
     if (shortcuts[e.key] !== undefined && shortcuts[e.key] !== null) {
@@ -429,8 +443,8 @@ export default function App() {
             </div>
           }>
                 
-          {/* Warning: no users configured */}
-          {!authEnabled && !hasUsers && (
+          {/* Warning: auth not enabled */}
+          {!authEnabled && (
             <Alert
               type="warning"
               banner
@@ -475,6 +489,7 @@ export default function App() {
               <Route path="/chat" element={<Chat />} />
               <Route path="/chat/:conversationId" element={<Chat />} />
               <Route path="/providers" element={<Providers />} />
+              <Route path="/models" element={<Models />} />
               <Route path="/logs" element={<Logs />} />
               <Route path="/apps" element={<Apps />} />
               <Route path="/config-api" element={<ApiPage />} />

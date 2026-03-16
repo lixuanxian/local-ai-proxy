@@ -17,10 +17,12 @@ import {
   FilterOutlined,
   PoweroffOutlined,
   DownOutlined,
+  ArrowUpOutlined,
+  ArrowDownOutlined,
 } from '@ant-design/icons';
 import { api } from '../api';
 import { CardSkeleton } from '../components/Skeleton';
-import { providerTypes, typeIcons, typeColors, CLI_TYPES, API_TYPES, DEFAULT_COMMANDS, getDefaultModel, buildModelOptions, buildBaseUrlOptions, getPresetByUrl, BASE_URL_PRESETS } from '../provider-config.jsx';
+import { providerTypes, typeIcons, typeColors, CLI_TYPES, API_TYPES, OAUTH_TYPES, DEFAULT_COMMANDS, DEFAULT_MODEL_PATTERNS, getDefaultModel, buildModelOptions, buildBaseUrlOptions, getPresetByUrl, BASE_URL_PRESETS } from '../provider-config.jsx';
 
 export default function Providers() {
   const [providers, setProviders] = useState([]);
@@ -28,7 +30,7 @@ export default function Providers() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form] = Form.useForm();
-  const [formType, setFormType] = useState('cli');
+  const [formType, setFormType] = useState('claude-cli');
   const [testResults, setTestResults] = useState({});
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState('');
@@ -48,7 +50,7 @@ export default function Providers() {
   const openAdd = () => {
     setEditing(null);
     form.resetFields();
-    const defaultType = 'cli';
+    const defaultType = 'claude-cli';
     form.setFieldsValue({ type: defaultType, enabled: true, default_model: getDefaultModel(defaultType) });
     setFormType(defaultType);
     setSelectedPreset(null);
@@ -73,11 +75,13 @@ export default function Providers() {
     try {
       const values = await form.validateFields();
       const isCli = CLI_TYPES.includes(values.type);
+      const isOAuth = OAUTH_TYPES.includes(values.type);
       const data = {
         ...values,
         model_patterns: Array.isArray(values.model_patterns) && values.model_patterns.length > 0 ? values.model_patterns : null,
         // Clear irrelevant fields based on type
         ...(isCli ? { base_url: null, api_key: null } : { command: null }),
+        ...(isOAuth ? { base_url: null, api_key: null, command: null } : {}),
       };
       if (editing) {
         await api.updateProvider(editing, data);
@@ -120,6 +124,35 @@ export default function Providers() {
   };
 
   const isCliType = CLI_TYPES.includes(formType);
+  const isOAuthType = OAUTH_TYPES.includes(formType);
+
+  const handleToggle = async (id, enabled) => {
+    await api.toggleProvider(id, enabled);
+    load();
+  };
+
+  const handlePriorityMove = async (id, direction) => {
+    const idx = filteredProviders.findIndex(p => p.id === id);
+    const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= filteredProviders.length) return;
+    const current = filteredProviders[idx];
+    const swap = filteredProviders[swapIdx];
+    // Swap priorities; if equal, assign based on position
+    const currentPri = current.priority ?? 0;
+    const swapPri = swap.priority ?? 0;
+    if (currentPri === swapPri) {
+      await Promise.all([
+        api.updateProviderPriority(current.id, direction === 'up' ? currentPri - 1 : currentPri + 1),
+        api.updateProviderPriority(swap.id, direction === 'up' ? swapPri + 1 : swapPri - 1),
+      ]);
+    } else {
+      await Promise.all([
+        api.updateProviderPriority(current.id, swapPri),
+        api.updateProviderPriority(swap.id, currentPri),
+      ]);
+    }
+    load();
+  };
 
   const handleBulkEnable = async () => {
     const disabled = providers.filter(p => !p.enabled);
@@ -332,11 +365,17 @@ export default function Providers() {
                   </div>
                 </div>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span className={`status-dot ${p.enabled ? 'online' : 'offline'}`} />
-                {p.is_default && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {!!p.is_default && (
                   <Tag color="purple" style={{ margin: 0, fontSize: 11 }}>Default</Tag>
                 )}
+                <Tooltip title={p.enabled ? 'Disable' : 'Enable'}>
+                  <Switch
+                    size="small"
+                    checked={!!p.enabled}
+                    onChange={(checked) => handleToggle(p.id, checked)}
+                  />
+                </Tooltip>
               </div>
             </div>
 
@@ -386,6 +425,7 @@ export default function Providers() {
               gap: 6,
               paddingTop: 12,
               borderTop: '1px solid var(--border-color-light)',
+              marginTop: 'auto',
             }}>
               <Tooltip title="Test Connection">
                 <Button
@@ -402,6 +442,38 @@ export default function Providers() {
                   <Button size="small" icon={<StarOutlined />} onClick={() => handleSetDefault(p.id)} />
                 </Tooltip>
               )}
+              <Tooltip title="Priority Order">
+                <span style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  minWidth: 22,
+                  height: 22,
+                  borderRadius: 11,
+                  fontSize: 11,
+                  fontWeight: 600,
+                  background: 'var(--color-primary-bg)',
+                  color: 'var(--color-primary)',
+                }}>
+                  #{filteredProviders.indexOf(p) + 1}
+                </span>
+              </Tooltip>
+              <Tooltip title="Move Up">
+                <Button
+                  size="small"
+                  icon={<ArrowUpOutlined />}
+                  disabled={filteredProviders.indexOf(p) === 0}
+                  onClick={() => handlePriorityMove(p.id, 'up')}
+                />
+              </Tooltip>
+              <Tooltip title="Move Down">
+                <Button
+                  size="small"
+                  icon={<ArrowDownOutlined />}
+                  disabled={filteredProviders.indexOf(p) === filteredProviders.length - 1}
+                  onClick={() => handlePriorityMove(p.id, 'down')}
+                />
+              </Tooltip>
               <div style={{ flex: 1 }} />
               <Tooltip title="Edit">
                 <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(p)} />
@@ -457,7 +529,7 @@ export default function Providers() {
               setFormType(v);
               setSelectedPreset(null);
               if (!editing) {
-                const updates = { default_model: getDefaultModel(v), model_patterns: [] };
+                const updates = { default_model: getDefaultModel(v), model_patterns: DEFAULT_MODEL_PATTERNS[v] || [] };
                 if (DEFAULT_COMMANDS[v]) updates.command = DEFAULT_COMMANDS[v];
                 if (BASE_URL_PRESETS[v]) {
                   const firstPreset = BASE_URL_PRESETS[v][0];
@@ -470,10 +542,10 @@ export default function Providers() {
               }
             }} />
           </Form.Item>
-          <Form.Item name="command" label="Command" hidden={!isCliType}>
-            <Input placeholder="claude, copilot, gemini, codex, aider, opencode" />
+          <Form.Item name="command" label="Command" hidden={!isCliType || isOAuthType}>
+            <Input placeholder="claude, copilot, gemini, codex" />
           </Form.Item>
-          <Form.Item name="base_url" label="Base URL" hidden={isCliType}>
+          <Form.Item name="base_url" label="Base URL" hidden={isCliType || isOAuthType}>
             <AutoComplete
               options={buildBaseUrlOptions(formType)}
               placeholder="Select a provider or enter URL..."
@@ -498,7 +570,7 @@ export default function Providers() {
               }
             />
           </Form.Item>
-          <Form.Item name="api_key" label="API Key" hidden={isCliType}>
+          <Form.Item name="api_key" label="API Key" hidden={isCliType || isOAuthType}>
             <Input.Password placeholder={editing ? "Leave empty to keep current key" : "sk-..."} />
           </Form.Item>
           <Form.Item name="default_model" label="Default Model" extra={isCliType ? 'Optional — CLI will use its own default if empty' : undefined}>

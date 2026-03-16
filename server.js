@@ -119,24 +119,34 @@ app.use("/v1", (req, res, next) => {
   // Auth disabled globally = skip all auth
   if (!authEnabled || authEnabled === "false") return next();
 
+  // 1. Check for API token (Bearer or x-api-key)
   const authHeader = req.headers.authorization || "";
   const apiKeyHeader = req.headers["x-api-key"] || "";
   const bearerToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
   const providedToken = bearerToken || apiKeyHeader;
 
-  if (!providedToken) {
-    return res.status(401).json({ error: { message: "Authorization required. Provide a Bearer token or x-api-key header.", type: "authentication_error" } });
+  if (providedToken) {
+    const tokenRecord = config.getApiTokenByToken(providedToken);
+    if (!tokenRecord) {
+      return res.status(403).json({ error: { message: "Invalid API token.", type: "authentication_error" } });
+    }
+    config.updateApiTokenLastUsed(tokenRecord.id);
+    return next();
   }
 
-  // Check against api_tokens table (only enabled tokens)
-  const tokenRecord = config.getApiTokenByToken(providedToken);
-  if (!tokenRecord) {
-    return res.status(403).json({ error: { message: "Invalid API token.", type: "authentication_error" } });
+  // 2. Fall back to session cookie (for web UI playground / embed preview)
+  const { parseCookies } = require("./lib/auth");
+  const cookies = parseCookies(req.headers.cookie || "");
+  const sessionToken = cookies["session"];
+  if (sessionToken) {
+    const session = config.getSessionByToken(sessionToken);
+    if (session) {
+      req.user = { id: session.user_id, username: session.username, role: session.role };
+      return next();
+    }
   }
 
-  // Update last_used_at
-  config.updateApiTokenLastUsed(tokenRecord.id);
-  next();
+  return res.status(401).json({ error: { message: "Authorization required. Provide a Bearer token or x-api-key header.", type: "authentication_error" } });
 });
 
 // Request logging middleware
@@ -210,6 +220,15 @@ const server = app.listen(PORT, "0.0.0.0", () => {
   const dbDefault = config.getDefaultProvider();
   console.log(`  Default provider: ${dbDefault ? dbDefault.name : registry.getDefault()}`);
   console.log(`  Available providers: ${registry.listNames().join(", ")}`);
+
+  // Log MCP server count
+  try {
+    const mcpServers = config.getAllMcpServers();
+    const enabled = mcpServers.filter(s => s.enabled);
+    if (mcpServers.length > 0) {
+      console.log(`  MCP servers: ${enabled.length}/${mcpServers.length} enabled (lazy connect on first use)`);
+    }
+  } catch { /* mcp_servers table may not exist yet */ }
   console.log();
 });
 
@@ -224,6 +243,16 @@ server.on("error", (err) => {
 
 // Graceful shutdown — release port before --watch restarts
 function shutdown() {
+  // Disconnect MCP clients
+  try {
+    const mcpClientManager = require("./lib/mcp-client");
+    mcpClientManager.disconnectAll().catch(() => {});
+  } catch { /* ignore */ }
+  // Kill persistent CLI processes
+  try {
+    const BaseCLIProvider = require("./providers/base-cli");
+    if (BaseCLIProvider.persistentPool) BaseCLIProvider.persistentPool.killAll();
+  } catch { /* ignore */ }
   server.close(() => process.exit(0));
   // Force exit if close takes too long
   setTimeout(() => process.exit(0), 1000);

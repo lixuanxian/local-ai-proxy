@@ -3,24 +3,49 @@ const BaseCLIProvider = require("./base-cli");
 // GitHub Copilot CLI provider
 // Install: npm install -g @github/copilot  (or winget install GitHub.Copilot)
 // Flags: -p (prompt), -s (non-interactive), --output-format (text|json), --model
+// Session: --resume=<session-id> (resume specific session), --continue (resume most recent)
 // JSON events: assistant.message (data.content), assistant.message_delta (data.deltaContent)
+// Result event: {"type":"result","sessionId":"<uuid>", ...}
 module.exports = new BaseCLIProvider({
   name: "copilot",
   command: "copilot",
-  buildArgs(prompt, model) {
-    // Use text format for non-streaming — simpler and avoids JSON parsing overhead
-    const args = ["-p", prompt, "-s", "--output-format", "text"];
+  supportsSession: true,
+  buildArgs(prompt, model, sessionOpts) {
+    // Use json format for non-streaming — allows session ID extraction from result event
+    const args = ["-p", prompt, "-s", "--output-format", "json"];
     if (model) args.push("--model", model);
+    if (sessionOpts?.isResume && sessionOpts?.sessionId) {
+      args.push(`--resume=${sessionOpts.sessionId}`);
+    } else if (sessionOpts?.isResume) {
+      args.push("--continue");
+    }
     return args;
   },
-  buildStreamArgs(prompt, model) {
+  buildStreamArgs(prompt, model, sessionOpts) {
     // Use json format for streaming — provides incremental delta events
     const args = ["-p", prompt, "-s", "--output-format", "json"];
     if (model) args.push("--model", model);
+    if (sessionOpts?.isResume && sessionOpts?.sessionId) {
+      args.push(`--resume=${sessionOpts.sessionId}`);
+    } else if (sessionOpts?.isResume) {
+      args.push("--continue");
+    }
     return args;
   },
   parseOutput(stdout) {
-    // text format: plain text response
+    // json format JSONL: extract content from assistant.message events
+    const lines = stdout.trim().split("\n");
+    for (const line of lines) {
+      try {
+        const obj = JSON.parse(line);
+        if (obj.type === "assistant.message" && obj.data?.content) {
+          return obj.data.content;
+        }
+      } catch {
+        // skip non-JSON lines
+      }
+    }
+    // Fallback: return raw output
     return stdout.trim();
   },
   parseStreamChunk(line) {
@@ -32,6 +57,21 @@ module.exports = new BaseCLIProvider({
       }
     } catch {
       // skip non-JSON lines
+    }
+    return null;
+  },
+  parseSessionId(stdout) {
+    // Extract sessionId from the result event: {"type":"result","sessionId":"<uuid>",...}
+    const lines = stdout.trim().split("\n");
+    for (const line of lines) {
+      try {
+        const obj = JSON.parse(line);
+        if (obj.type === "result" && obj.sessionId) {
+          return obj.sessionId;
+        }
+      } catch {
+        // skip non-JSON lines
+      }
     }
     return null;
   },

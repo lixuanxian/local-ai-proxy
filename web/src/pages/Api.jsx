@@ -42,6 +42,7 @@ function TokensTab() {
       setTokens(t);
     } catch { message.error('Failed to load'); }
     setLoading(false);
+    window.dispatchEvent(new Event('tokens:changed'));
   };
 
   useEffect(() => { load(); }, []);
@@ -49,6 +50,7 @@ function TokensTab() {
   const toggleAuth = async (enabled) => {
     await api.setSetting('auth_enabled', String(enabled));
     load();
+    window.dispatchEvent(new Event('auth:changed'));
   };
 
   const computeExpiresAt = (val) => {
@@ -187,15 +189,6 @@ function TokensTab() {
                 <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-tertiary)' }}>
                   {tok.token}
                 </span>
-                <Tooltip title="Copy token identifier">
-                  <CopyOutlined
-                    style={{ fontSize: 11, color: 'var(--text-tertiary)', cursor: 'pointer' }}
-                    onClick={() => {
-                      navigator.clipboard.writeText(tok.token);
-                      message.success('Copied!');
-                    }}
-                  />
-                </Tooltip>
               </div>
               <div style={{ display: 'flex', gap: 12, fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>
                 {tok.created_at && (
@@ -329,6 +322,7 @@ function PlaygroundSection() {
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify(body),
         signal: abortRef.current.signal,
       });
@@ -858,6 +852,7 @@ function EmbedTab() {
   const [settings, setSettings] = useState(null);
   const [providers, setProviders] = useState([]);
   const [allSkills, setAllSkills] = useState([]);
+  const [tokens, setTokens] = useState([]);
   const [loading, setLoading] = useState(true);
   const iframeRef = useRef(null);
   const [iframeKey, setIframeKey] = useState(0);
@@ -879,6 +874,7 @@ function EmbedTab() {
     mcpServers: [], // MCP server metadata [{name, url}]
     embedMode: 'inline', // 'inline' or 'floating'
     position: 'br', // 'br' or 'bl'
+    token: '', // API token for embed auth
   };
 
   // Configurator state
@@ -887,10 +883,11 @@ function EmbedTab() {
   const load = async () => {
     setLoading(true);
     try {
-      const [s, p, sk] = await Promise.all([api.getSettings(), api.getProviders(), api.getSkills()]);
+      const [s, p, sk, t] = await Promise.all([api.getSettings(), api.getProviders(), api.getSkills(), api.getTokens()]);
       setSettings(s);
       setProviders(p.filter(pr => pr.enabled));
       setAllSkills(sk.filter(s => s.enabled));
+      setTokens(t.filter(tk => tk.enabled));
     } catch { message.error('Failed to load'); }
     setLoading(false);
   };
@@ -1275,9 +1272,36 @@ ${authEnabled ? `
               </div>
             </div>
 
-            {/* Skills */}
-            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>
+            {/* Token (for external embed) */}
+            {authEnabled && (
+              <>
+                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>
+                  API Token
+                </div>
+                <div style={{ display: 'grid', gap: 10, marginBottom: 16 }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 2 }}>
+                    When embedded on external sites, an API token is required for authentication. The live preview above uses your current session and does not need a token.
+                  </div>
+                  <Input.Password
+                    size="small"
+                    value={embedConfig.token}
+                    onChange={(e) => updateConfig('token', e.target.value)}
+                    placeholder="Paste your API token (from Tokens tab)"
+                    style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}
+                  />
+                  {tokens.length > 0 && (
+                    <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+                      {tokens.length} active token{tokens.length > 1 ? 's' : ''} available — paste the full token value you copied when creating it.
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
+            {/* Skills (Optional) */}
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
               Skills
+              <span style={{ fontSize: 10, fontWeight: 400, color: 'var(--text-tertiary)', textTransform: 'none', letterSpacing: 0 }}>Optional</span>
             </div>
             <div style={{ display: 'grid', gap: 10, marginBottom: 16 }}>
               {allSkills.length > 0 ? (
@@ -1315,9 +1339,10 @@ ${authEnabled ? `
               )}
             </div>
 
-            {/* MCP Servers */}
-            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>
+            {/* MCP Servers (Optional) */}
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
               MCP Servers
+              <span style={{ fontSize: 10, fontWeight: 400, color: 'var(--text-tertiary)', textTransform: 'none', letterSpacing: 0 }}>Optional</span>
             </div>
             <div style={{ display: 'grid', gap: 10, marginBottom: 16 }}>
               <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 2 }}>
@@ -1591,7 +1616,7 @@ export default function ApiPage() {
         items={[
           {
             key: 'integration',
-            label: <span><CodeOutlined /> Integration</span>,
+            label: <span><PlayCircleOutlined /> API Playground</span>,
             children: <IntegrationTab />,
           },
           {

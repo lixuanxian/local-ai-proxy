@@ -10,7 +10,7 @@ module.exports = function createAnthropicRouter(providerRegistry) {
   // Messages endpoint (Anthropic-compatible)
   router.post("/v1/messages", async (req, res) => {
     try {
-      const { model, messages, system, stream, provider: providerName, session_id } = req.body;
+      const { model, messages, system, stream, provider: providerName, session_id, tools, tool_choice } = req.body;
 
       if (!session_id && (!messages || !Array.isArray(messages) || messages.length === 0)) {
         return res.status(400).json({
@@ -39,11 +39,14 @@ module.exports = function createAnthropicRouter(providerRegistry) {
         unifiedMessages.push({ role: msg.role, content });
       }
 
-      const resolvedName = providerRegistry.resolve(providerName, model);
+      const resolved = providerRegistry.resolve(providerName, model);
+      const resolvedName = resolved.name;
+      const effectiveModel = resolved.modelMatched ? model : undefined;
       let provider;
 
       // Try DB-configured provider first (supports custom base_url/api_key)
-      const dbProvider = config.getProvider(resolvedName) || config.getDefaultProvider();
+      const rawDbProvider = config.getProvider(resolvedName) || config.getDefaultProvider();
+      const dbProvider = rawDbProvider && rawDbProvider.enabled ? rawDbProvider : null;
       if (dbProvider && dbProvider.base_url) {
         provider = resolveProvider(dbProvider, providerRegistry);
       }
@@ -92,7 +95,8 @@ module.exports = function createAnthropicRouter(providerRegistry) {
 
         let contextResult = buildContextWindow(session_id, { systemPrompt: conv.system_prompt });
 
-        if (contextResult.contextInfo.compressRecommended && conv.auto_compress) {
+        const isCLI = !!provider.command;
+        if (!isCLI && contextResult.contextInfo.compressRecommended && conv.auto_compress) {
           try {
             await compressConversation(session_id, provider, model);
             contextResult = buildContextWindow(session_id, { systemPrompt: conv.system_prompt });
@@ -136,7 +140,7 @@ module.exports = function createAnthropicRouter(providerRegistry) {
         res.write(`event: content_block_start\ndata: ${JSON.stringify({ type: "content_block_start", index: 0, content_block: { type: "text", text: "" } })}\n\n`);
 
         try {
-          const emitter = provider.chatStream(chatMessages, { model });
+          const emitter = provider.chatStream(chatMessages, { model: effectiveModel, session_id, tools, tool_choice });
           let fullResponse = "";
 
           const onText = (text) => {
@@ -204,7 +208,7 @@ module.exports = function createAnthropicRouter(providerRegistry) {
       }
 
       // Non-streaming
-      const result = await provider.chat(chatMessages, { model });
+      const result = await provider.chat(chatMessages, { model: effectiveModel, session_id, tools, tool_choice });
       const content = result.choices?.[0]?.message?.content || "";
 
       if (session_id && content) {
