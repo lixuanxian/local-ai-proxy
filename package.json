@@ -12,6 +12,7 @@
     "setup": "npm install && cd web && npm install && npm run build"
   },
   "dependencies": {
+    "bcryptjs": "^3.0.3",
     "better-sqlite3": "^12.6.2",
     "express": "^4.21.0",
     "multer": "^2.1.1"

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
-import { Menu, ConfigProvider, theme, Spin, Modal, Button, Tag } from 'antd';
+import { Menu, ConfigProvider, theme, Spin, Modal, Button, Tag, Alert } from 'antd';
 import {
   DashboardOutlined,
   ApiOutlined,
@@ -18,9 +18,13 @@ import {
   SafetyOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
+  UserOutlined,
+  LogoutOutlined,
+  WarningOutlined,
 } from '@ant-design/icons';
 import { api } from './api';
 import CommandPalette from './components/CommandPalette';
+import Login from './pages/Login';
 
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Chat = lazy(() => import('./pages/Chat'));
@@ -38,7 +42,7 @@ const menuItems = [
   { key: '/providers', icon: <ApiOutlined />, label: 'Providers' },
   { key: '/logs', icon: <FileTextOutlined />, label: 'Logs' },
   { key: '/apps', icon: <AppstoreOutlined />, label: 'Apps' },
-  { key: '/api', icon: <ApiOutlined />, label: 'API' },
+  { key: '/config-api', icon: <ApiOutlined />, label: 'API' },
   { key: '/settings', icon: <SettingOutlined />, label: 'Settings' },
 ];
 
@@ -48,7 +52,7 @@ const pageNames = {
   '/providers': 'Providers',
   '/logs': 'Logs',
   '/apps': 'Apps',
-  '/api': 'API',
+  '/config-api': 'API',
   '/settings': 'Settings',
 };
 
@@ -63,6 +67,57 @@ export default function App() {
 
   const [pendingOrigins, setPendingOrigins] = useState([]);
   const [corsModalOpen, setCorsModalOpen] = useState(false);
+
+  // Auth state
+  const [authEnabled, setAuthEnabled] = useState(false);
+  const [hasUsers, setHasUsers] = useState(false);
+  const [user, setUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authChecked, setAuthChecked] = useState(false);
+  const [noApiTokens, setNoApiTokens] = useState(false);
+
+  // Check auth status on mount
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const status = await api.getAuthStatus();
+        setAuthEnabled(status.authEnabled);
+        setHasUsers(status.hasUsers);
+        if (status.authEnabled) {
+          try {
+            const me = await api.getMe();
+            if (me.user) setUser(me.user);
+          } catch { /* not authenticated */ }
+        }
+      } catch { /* server unavailable */ }
+      setAuthLoading(false);
+      setAuthChecked(true);
+    };
+    checkAuth();
+
+    // Listen for 401 events from api.js
+    const handleUnauth = () => { setUser(null); };
+    window.addEventListener('auth:unauthorized', handleUnauth);
+    return () => window.removeEventListener('auth:unauthorized', handleUnauth);
+  }, []);
+
+  // Check for API token warnings
+  useEffect(() => {
+    if (!authChecked) return;
+    const checkTokens = async () => {
+      try {
+        const settings = await api.getSettings();
+        if (settings.auth_enabled === 'true') {
+          const tokens = await api.getTokens();
+          const enabledTokens = tokens.filter(t => t.enabled);
+          setNoApiTokens(enabledTokens.length === 0);
+        } else {
+          setNoApiTokens(false);
+        }
+      } catch { /* ignore */ }
+    };
+    checkTokens();
+  }, [authChecked, user]);
 
   useEffect(() => {
     api.getInfo().then((d) => { setInfo(d); setHealthy(true); }).catch(() => setHealthy(false));
@@ -130,7 +185,7 @@ export default function App() {
       '3': '/providers',
       '4': '/logs',
       '5': '/apps',
-      '6': '/api',
+      '6': '/config-api',
       '7': '/settings',
     };
 
@@ -176,6 +231,11 @@ export default function App() {
 
   const currentPage = pageNames[location.pathname] || (location.pathname.startsWith('/chat/') ? 'Chat' : '');
 
+  const handleLogout = async () => {
+    await api.logout();
+    setUser(null);
+  };
+
   // Render embed routes outside the main layout (no sidebar/header)
   if (location.pathname === '/embed/chat') {
     return (
@@ -185,10 +245,29 @@ export default function App() {
     );
   }
 
+  // Show loading while checking auth
+  if (authLoading) {
+    return (
+      <ConfigProvider theme={themeConfig}>
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh' }}>
+          <Spin size="large" />
+        </div>
+      </ConfigProvider>
+    );
+  }
+
+  // Show login page if auth is enabled and user is not authenticated
+  if (authEnabled && !user) {
+    return (
+      <ConfigProvider theme={themeConfig}>
+        <Login onLogin={(u) => { setUser(u); setHasUsers(true); }} hasUsers={hasUsers} />
+      </ConfigProvider>
+    );
+  }
+
   return (
     <ConfigProvider theme={themeConfig}>
       <CommandPalette onToggleTheme={() => setDarkMode(d => !d)} />
-
       {/* CORS Authorization Modal */}
       <Modal
         title={<span><SafetyOutlined style={{ marginRight: 8 }} />CORS Authorization Request</span>}
@@ -248,7 +327,7 @@ export default function App() {
         </div>
         <Menu
           mode="inline"
-          selectedKeys={[location.pathname.startsWith('/chat/') ? '/chat' : location.pathname]}
+          selectedKeys={[location.pathname.startsWith('/chat/') ? '/chat' : location.pathname.startsWith('/config-api') ? '/config-api' : location.pathname]}
           items={menuItems}
           onClick={({ key }) => navigate(key)}
           style={{ flex: 1 }}
@@ -323,14 +402,74 @@ export default function App() {
                 </span>
               </>
             )}
+            {user && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 4 }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--text-secondary)' }}>
+                  <UserOutlined style={{ fontSize: 12 }} />
+                  {user.username}
+                </span>
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<LogoutOutlined />}
+                  onClick={handleLogout}
+                  style={{ fontSize: 12, color: 'var(--text-tertiary)' }}
+                >
+                  Logout
+                </Button>
+              </div>
+            )}
           </div>
         </div>
         <div className="main-content">
+          
           <Suspense fallback={
             <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 300 }}>
               <Spin size="large" />
             </div>
           }>
+                
+          {/* Warning: no users configured */}
+          {!authEnabled && !hasUsers && (
+            <Alert
+              type="warning"
+              banner
+              showIcon
+              icon={<WarningOutlined />}
+              title={
+                <span>
+                  No authentication configured.{' '}
+                  <a onClick={() => navigate('/settings')} style={{ cursor: 'pointer', textDecoration: 'underline' }}>
+                    Go to Settings
+                  </a>
+                  {' '}to set up user authentication.
+                </span>
+              }
+              closable
+              style={{ marginBottom: 16 }}
+            />
+          )}
+
+          {/* Warning: auth enabled but no API tokens */}
+          {authEnabled && noApiTokens && (
+            <Alert
+              type="warning"
+              banner
+              showIcon
+              icon={<WarningOutlined />}
+              title={
+                <span>
+                  No API tokens configured. API endpoints (/v1/*) can be accessed without authorization.{' '}
+                  <a onClick={() => navigate('/config-api/tokens')} style={{ cursor: 'pointer', textDecoration: 'underline' }}>
+                    Go to API Tokens
+                  </a>
+                  {' '}to create API tokens.
+                </span>
+              }
+              closable
+              style={{ marginBottom: 16 }}
+            />
+          )}
             <Routes>
               <Route path="/" element={<Dashboard />} />
               <Route path="/chat" element={<Chat />} />
@@ -338,7 +477,8 @@ export default function App() {
               <Route path="/providers" element={<Providers />} />
               <Route path="/logs" element={<Logs />} />
               <Route path="/apps" element={<Apps />} />
-              <Route path="/api" element={<ApiPage />} />
+              <Route path="/config-api" element={<ApiPage />} />
+              <Route path="/config-api/:tab" element={<ApiPage />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="*" element={<NotFound />} />
             </Routes>

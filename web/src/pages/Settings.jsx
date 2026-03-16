@@ -1,9 +1,13 @@
 import { useEffect, useState } from 'react';
-import { Switch, message, Input, Button, Tag, Radio, Modal } from 'antd';
+import { Switch, message, Input, Button, Tag, Radio, Modal, Popconfirm } from 'antd';
 import {
   SaveOutlined,
   SafetyOutlined,
   ThunderboltOutlined,
+  LockOutlined,
+  UserAddOutlined,
+  DeleteOutlined,
+  KeyOutlined,
 } from '@ant-design/icons';
 import { api } from '../api';
 
@@ -26,6 +30,15 @@ export default function Settings() {
   const [port, setPort] = useState('');
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
+  // Auth / Users state
+  const [users, setUsers] = useState([]);
+  const [userModalOpen, setUserModalOpen] = useState(false);
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState(null);
+  const [newUsername, setNewUsername] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [newRole, setNewRole] = useState('admin');
+
   const load = async () => {
     setLoading(true);
     try {
@@ -37,6 +50,57 @@ export default function Settings() {
   };
 
   useEffect(() => { load(); }, []);
+
+  const loadUsers = async () => {
+    try {
+      const data = await api.getUsers();
+      setUsers(Array.isArray(data) ? data : []);
+    } catch { /* ignore if auth not enabled */ }
+  };
+
+  useEffect(() => {
+    if (settings?.auth_enabled === 'true') loadUsers();
+  }, [settings?.auth_enabled]);
+
+  const handleAddUser = async () => {
+    if (!newUsername || !newPassword) return message.error('Username and password are required');
+    if (newPassword.length < 6) return message.error('Password must be at least 6 characters');
+    try {
+      const res = await api.createUser({ username: newUsername, password: newPassword, role: newRole });
+      if (res.error) return message.error(res.error);
+      message.success('User created');
+      setUserModalOpen(false);
+      setNewUsername(''); setNewPassword(''); setNewRole('admin');
+      loadUsers();
+    } catch { message.error('Failed to create user'); }
+  };
+
+  const handleChangePassword = async () => {
+    if (!newPassword || newPassword.length < 6) return message.error('Password must be at least 6 characters');
+    try {
+      const res = await api.changeUserPassword(editingUser.id, newPassword);
+      if (res.error) return message.error(res.error);
+      message.success('Password changed');
+      setPasswordModalOpen(false);
+      setEditingUser(null); setNewPassword('');
+    } catch { message.error('Failed to change password'); }
+  };
+
+  const handleDeleteUser = async (id) => {
+    try {
+      const res = await api.deleteUser(id);
+      if (res.error) return message.error(res.error);
+      message.success('User deleted');
+      loadUsers();
+    } catch { message.error('Failed to delete user'); }
+  };
+
+  const handleToggleAuth = async (enabled) => {
+    if (enabled && users.length === 0) {
+      return message.warning('Please create at least one user before enabling authentication');
+    }
+    await updateSetting('auth_enabled', enabled);
+  };
 
   const updateSetting = async (key, value) => {
     try {
@@ -156,6 +220,106 @@ export default function Settings() {
           </Radio.Group>
         </div>
       </div>
+
+      <div className="settings-section">
+        <div className="settings-section-title">
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <LockOutlined /> Authentication
+          </span>
+        </div>
+        <div className="settings-section-desc">Protect web UI and management API with login</div>
+
+        <div className="settings-row">
+          <div>
+            <div className="settings-row-label">Enable Authentication</div>
+            <div className="settings-row-desc">Require login for web UI and /api/* endpoints</div>
+          </div>
+          <Switch
+            checked={settings?.auth_enabled === 'true'}
+            onChange={handleToggleAuth}
+          />
+        </div>
+
+        <div style={{ marginTop: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <div className="settings-row-label">Users</div>
+            <Button
+              size="small"
+              icon={<UserAddOutlined />}
+              onClick={() => { setNewUsername(''); setNewPassword(''); setNewRole('admin'); setUserModalOpen(true); }}
+            >
+              Add User
+            </Button>
+          </div>
+
+          {users.length === 0 ? (
+            <div style={{ padding: 16, textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 13, border: '1px dashed var(--border-color)', borderRadius: 'var(--radius-sm)' }}>
+              No users configured. Add a user to enable authentication.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {users.map(u => (
+                <div key={u.id} style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '10px 12px', borderRadius: 'var(--radius-sm)',
+                  border: '1px solid var(--border-color)', background: 'var(--bg-secondary)',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ fontWeight: 500 }}>{u.username}</span>
+                    <Tag color={u.role === 'admin' ? 'blue' : 'default'} style={{ fontSize: 11 }}>{u.role}</Tag>
+                  </div>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    <Button size="small" icon={<KeyOutlined />}
+                      onClick={() => { setEditingUser(u); setNewPassword(''); setPasswordModalOpen(true); }}
+                    >
+                      Password
+                    </Button>
+                    <Popconfirm title="Delete this user?" onConfirm={() => handleDeleteUser(u.id)} okText="Delete" okButtonProps={{ danger: true }}>
+                      <Button size="small" danger icon={<DeleteOutlined />} />
+                    </Popconfirm>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Add User Modal */}
+      <Modal
+        title={<span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><UserAddOutlined /> Add User</span>}
+        open={userModalOpen}
+        onCancel={() => setUserModalOpen(false)}
+        onOk={handleAddUser}
+        okText="Create"
+        width={400}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 16 }}>
+          <Input placeholder="Username" value={newUsername} onChange={e => setNewUsername(e.target.value)} />
+          <Input.Password placeholder="Password (min 6 characters)" value={newPassword} onChange={e => setNewPassword(e.target.value)} />
+          <Radio.Group value={newRole} onChange={e => setNewRole(e.target.value)} size="small">
+            <Radio.Button value="admin">Admin</Radio.Button>
+            <Radio.Button value="user">User</Radio.Button>
+          </Radio.Group>
+        </div>
+      </Modal>
+
+      {/* Change Password Modal */}
+      <Modal
+        title={<span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><KeyOutlined /> Change Password</span>}
+        open={passwordModalOpen}
+        onCancel={() => { setPasswordModalOpen(false); setEditingUser(null); }}
+        onOk={handleChangePassword}
+        okText="Change"
+        width={400}
+      >
+        <div style={{ marginTop: 16 }}>
+          <div style={{ marginBottom: 8, color: 'var(--text-secondary)', fontSize: 13 }}>
+            Changing password for <strong>{editingUser?.username}</strong>
+          </div>
+          <Input.Password placeholder="New password (min 6 characters)" value={newPassword} onChange={e => setNewPassword(e.target.value)} />
+        </div>
+      </Modal>
 
       <Modal
         title={<span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><ThunderboltOutlined /> Keyboard Shortcuts</span>}

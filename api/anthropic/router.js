@@ -1,5 +1,6 @@
 const { Router } = require("express");
 const config = require("../../lib/config");
+const { logRequest } = require("../../lib/logger");
 const { resolveProvider, anthropicToInternal, buildMessageContent, logMessageAttachments } = require("../../lib/utils");
 const { buildContextWindow, compressConversation } = require("../../lib/context");
 
@@ -117,6 +118,7 @@ module.exports = function createAnthropicRouter(providerRegistry) {
         res.setHeader("Connection", "keep-alive");
 
         const msgId = `msg_${Date.now()}`;
+        const streamStart = Date.now();
 
         const startEvent = {
           type: "message_start",
@@ -151,6 +153,17 @@ module.exports = function createAnthropicRouter(providerRegistry) {
             if (session_id && fullResponse) {
               config.saveMessage({ conversation_id: session_id, role: "assistant", content: fullResponse });
             }
+            logRequest({
+              apiFormat: "anthropic",
+              providerId: providerName || resolvedName,
+              model: model || null,
+              requestBody: { messages: chatMessages.length, model, provider: providerName, stream: true },
+              responseBody: { content_length: fullResponse.length },
+              statusCode: 200,
+              inputTokens: 0,
+              outputTokens: 0,
+              latencyMs: Date.now() - streamStart,
+            });
             res.write(`event: content_block_stop\ndata: ${JSON.stringify({ type: "content_block_stop", index: 0 })}\n\n`);
             res.write(`event: message_delta\ndata: ${JSON.stringify({ type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 0 } })}\n\n`);
             res.write(`event: message_stop\ndata: ${JSON.stringify({ type: "message_stop" })}\n\n`);
@@ -161,6 +174,15 @@ module.exports = function createAnthropicRouter(providerRegistry) {
             if (session_id && fullResponse) {
               config.saveMessage({ conversation_id: session_id, role: "assistant", content: fullResponse });
             }
+            logRequest({
+              apiFormat: "anthropic",
+              providerId: providerName || resolvedName,
+              model: model || null,
+              requestBody: { messages: chatMessages.length, model, provider: providerName, stream: true },
+              statusCode: 500,
+              latencyMs: Date.now() - streamStart,
+              error: err.message,
+            });
             res.write(`event: error\ndata: ${JSON.stringify({ type: "error", error: { message: err.message } })}\n\n`);
             res.end();
           };

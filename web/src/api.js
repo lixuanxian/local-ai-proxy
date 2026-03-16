@@ -2,10 +2,15 @@ const BASE = '';
 
 export async function request(path, options = {}) {
   const res = await fetch(`${BASE}${path}`, {
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json', ...options.headers },
     ...options,
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
+  // Redirect to login on 401 (except for auth endpoints)
+  if (res.status === 401 && !path.includes('/api/auth/')) {
+    window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+  }
   return res.json();
 }
 
@@ -80,6 +85,7 @@ export const api = {
   sendMessageStream: async (convId, data) => {
     const res = await fetch(`/api/conversations/${convId}/messages`, {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...data, stream: true }),
     });
@@ -99,11 +105,38 @@ export const api = {
   updateToken: (id, data) => request(`/api/tokens/${id}`, { method: 'PUT', body: data }),
   deleteToken: (id) => request(`/api/tokens/${id}`, { method: 'DELETE' }),
 
+  // Auth
+  getAuthStatus: () => request('/api/auth/status'),
+  login: (username, password) => fetch('/api/auth/login', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  }).then(r => r.json()),
+  logout: () => fetch('/api/auth/logout', {
+    method: 'POST',
+    credentials: 'include',
+  }).then(r => r.json()),
+  getMe: () => request('/api/auth/me'),
+  setupAdmin: (username, password) => fetch('/api/auth/setup', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  }).then(r => r.json()),
+
+  // Users
+  getUsers: () => request('/api/users'),
+  createUser: (data) => request('/api/users', { method: 'POST', body: data }),
+  updateUser: (id, data) => request(`/api/users/${id}`, { method: 'PUT', body: data }),
+  changeUserPassword: (id, password) => request(`/api/users/${id}/password`, { method: 'PUT', body: { password } }),
+  deleteUser: (id) => request(`/api/users/${id}`, { method: 'DELETE' }),
+
   // File upload
   uploadFile: async (file) => {
     const formData = new FormData();
     formData.append('file', file);
-    const res = await fetch('/api/upload', { method: 'POST', body: formData });
+    const res = await fetch('/api/upload', { method: 'POST', credentials: 'include', body: formData });
     return res.json();
   },
 };

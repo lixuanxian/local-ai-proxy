@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef, useMemo, useCallback } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { message, Input, Button, Tag, Tooltip, Alert, Switch, Tabs, Segmented, Modal, Popconfirm, Select, ColorPicker, Slider } from 'antd';
 import {
   CopyOutlined,
@@ -17,6 +18,7 @@ import {
   PlayCircleOutlined,
   UndoOutlined,
   LinkOutlined,
+  ClockCircleOutlined,
 } from '@ant-design/icons';
 import { api } from '../api';
 
@@ -30,6 +32,7 @@ function TokensTab() {
   const [createdToken, setCreatedToken] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [editName, setEditName] = useState('');
+  const [newExpiration, setNewExpiration] = useState('never');
 
   const load = async () => {
     setLoading(true);
@@ -48,12 +51,24 @@ function TokensTab() {
     load();
   };
 
+  const computeExpiresAt = (val) => {
+    if (val === 'never') return null;
+    const d = new Date();
+    if (val === '7d') d.setDate(d.getDate() + 7);
+    else if (val === '30d') d.setDate(d.getDate() + 30);
+    else if (val === '90d') d.setDate(d.getDate() + 90);
+    else if (val === '1y') d.setFullYear(d.getFullYear() + 1);
+    else return null;
+    return d.toISOString().replace('T', ' ').replace(/\.\d+Z$/, '');
+  };
+
   const createToken = async () => {
     if (!newName.trim()) return message.warning('Name is required');
     try {
-      const tok = await api.createToken({ name: newName.trim() });
+      const tok = await api.createToken({ name: newName.trim(), expires_at: computeExpiresAt(newExpiration) });
       setCreatedToken(tok);
       setNewName('');
+      setNewExpiration('never');
       load();
     } catch { message.error('Failed to create token'); }
   };
@@ -164,6 +179,9 @@ function TokensTab() {
                   </>
                 )}
                 {!tok.enabled && <Tag color="default" style={{ fontSize: 10, margin: 0 }}>Paused</Tag>}
+                {tok.expires_at && new Date(tok.expires_at + 'Z') < new Date() && (
+                  <Tag color="red" style={{ fontSize: 10, margin: 0 }}>Expired</Tag>
+                )}
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
                 <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-tertiary)' }}>
@@ -187,6 +205,14 @@ function TokensTab() {
                   <span>Last used: {new Date(tok.last_used_at + 'Z').toLocaleString()}</span>
                 )}
                 {!tok.last_used_at && <span>Never used</span>}
+                {tok.expires_at ? (
+                  <span>
+                    <ClockCircleOutlined style={{ marginRight: 3 }} />
+                    Expires: {new Date(tok.expires_at + 'Z').toLocaleDateString()}
+                  </span>
+                ) : (
+                  <span>Never expires</span>
+                )}
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
@@ -204,7 +230,7 @@ function TokensTab() {
       <Modal
         title="Create API Token"
         open={createOpen && !createdToken}
-        onCancel={() => { setCreateOpen(false); setNewName(''); }}
+        onCancel={() => { setCreateOpen(false); setNewName(''); setNewExpiration('never'); }}
         onOk={createToken}
         okText="Create"
       >
@@ -217,6 +243,21 @@ function TokensTab() {
           onChange={(e) => setNewName(e.target.value)}
           onPressEnter={createToken}
           autoFocus
+        />
+        <div style={{ marginTop: 16, marginBottom: 8, fontSize: 13, color: 'var(--text-secondary)' }}>
+          Expiration
+        </div>
+        <Select
+          value={newExpiration}
+          onChange={setNewExpiration}
+          style={{ width: '100%' }}
+          options={[
+            { value: 'never', label: 'Never expires' },
+            { value: '7d', label: '7 days' },
+            { value: '30d', label: '30 days' },
+            { value: '90d', label: '90 days' },
+            { value: '1y', label: '1 year' },
+          ]}
         />
       </Modal>
 
@@ -608,6 +649,43 @@ console.log(data.choices[0].message.content);`,
     <div>
       {/* API Playground */}
       <PlaygroundSection />
+
+      {/* Base URLs */}
+      <div className="settings-section">
+        <div className="settings-section-title">Base URLs</div>
+        <div className="settings-section-desc">Use these base URLs to configure your AI clients and SDKs</div>
+
+        {[
+          { label: 'OpenAI Base URL', url: `${baseUrl}/v1`, color: 'blue', desc: 'For OpenAI SDK, Cursor, Continue, etc.' },
+          { label: 'Anthropic Base URL', url: baseUrl, color: 'orange', desc: 'For Anthropic SDK and compatible clients' },
+        ].map((item) => (
+          <div key={item.label} className="settings-row" style={{ gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
+              <Tag color={item.color} style={{ fontSize: 10, margin: 0, flexShrink: 0 }}>{item.label}</Tag>
+              <code style={{
+                fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--text-primary)', fontWeight: 500,
+                background: 'var(--bg-code)', padding: '3px 10px', borderRadius: 'var(--radius-sm)',
+                border: '1px solid var(--border-color)', userSelect: 'all',
+              }}>
+                {item.url}
+              </code>
+              <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{item.desc}</span>
+            </div>
+            <Tooltip title="Copy URL">
+              <Button
+                size="small"
+                icon={<CopyOutlined />}
+                onClick={() => {
+                  navigator.clipboard.writeText(item.url);
+                  message.success('Copied!');
+                }}
+              >
+                Copy
+              </Button>
+            </Tooltip>
+          </div>
+        ))}
+      </div>
 
       {/* API Endpoints */}
       <div className="settings-section">
@@ -1489,20 +1567,27 @@ ${authEnabled ? `
 }
 
 // ---- Main API Page ----
+const VALID_TABS = ['integration', 'tokens', 'embed'];
+
 export default function ApiPage() {
+  const { tab } = useParams();
+  const navigate = useNavigate();
+  const activeTab = VALID_TABS.includes(tab) ? tab : 'integration';
+
   return (
     <div className="animate-fade-in">
       <div className="page-header">
         <div>
-          <h2>API</h2>
+          <h2>API Tokens</h2>
           <div className="page-header-subtitle">
-            Authentication, endpoints, integration guides, and embed widgets
+            Authentication, tokens, endpoints, integration guides, and embed widgets
           </div>
         </div>
       </div>
 
       <Tabs
-        defaultActiveKey="integration"
+        activeKey={activeTab}
+        onChange={(key) => navigate(`/config-api/${key}`, { replace: true })}
         items={[
           {
             key: 'integration',

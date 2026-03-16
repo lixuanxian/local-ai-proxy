@@ -14,6 +14,30 @@ function getCleanEnv() {
   return env;
 }
 
+// Registry name → DB provider ID
+const nameToId = {
+  claude: 'claude-cli', gemini: 'gemini-cli', codex: 'codex-cli',
+  copilot: 'copilot-cli', aider: 'aider-cli', opencode: 'opencode-cli',
+};
+
+// Check if a model matches any of the provider's configured model_patterns
+function isModelSupported(providerName, model) {
+  if (!model) return true;
+  try {
+    const config = require("../lib/config");
+    const dbId = nameToId[providerName] || providerName;
+    const provider = config.getProvider(dbId);
+    if (!provider || !provider.model_patterns) return true;
+    const patterns = typeof provider.model_patterns === 'string'
+      ? JSON.parse(provider.model_patterns) : provider.model_patterns;
+    if (!Array.isArray(patterns) || patterns.length === 0) return true;
+    const m = model.toLowerCase();
+    return patterns.some(p => m.includes(p.toLowerCase()));
+  } catch {
+    return true;
+  }
+}
+
 class BaseCLIProvider {
   constructor({ name, command, buildArgs, buildStreamArgs, parseOutput, parseStreamChunk }) {
     this.name = name;
@@ -25,9 +49,19 @@ class BaseCLIProvider {
     this._parseStreamChunk = parseStreamChunk || null;
   }
 
+  // Filter model: if not in provider's model_patterns, drop it
+  _filterModel(model) {
+    if (!model) return undefined;
+    if (!isModelSupported(this.name, model)) {
+      console.log(`[CLI:${this.name}] model "${model}" not in supported patterns, omitting --model`);
+      return undefined;
+    }
+    return model;
+  }
+
   async chat(messages, options = {}) {
     const prompt = formatMessages(messages);
-    const model = options.model && options.model !== 'auto' ? options.model : undefined;
+    const model = this._filterModel(options.model && options.model !== 'auto' ? options.model : undefined);
     const args = this._buildArgs(prompt, model);
 
     const safeArgs = args.map((a, i) => i === args.indexOf(prompt) ? `"${prompt.slice(0, 80)}${prompt.length > 80 ? '...' : ''}"` : a);
@@ -63,7 +97,7 @@ class BaseCLIProvider {
 
   chatStream(messages, options = {}) {
     const prompt = formatMessages(messages);
-    const model = options.model && options.model !== 'auto' ? options.model : undefined;
+    const model = this._filterModel(options.model && options.model !== 'auto' ? options.model : undefined);
     const args = this._buildStreamArgs(prompt, model);
 
     const safeArgs = args.map((a, i) => i === args.indexOf(prompt) ? `"${prompt.slice(0, 80)}${prompt.length > 80 ? '...' : ''}"` : a);

@@ -1,5 +1,7 @@
 const { Router } = require("express");
 const config = require("../../lib/config");
+const bcrypt = require("bcryptjs");
+const { requireAuth, parseCookies } = require("../../lib/auth");
 const { queryLogs, getStats, getHourlyStats, getProviderStats, getModelStats, clearLogs } = require("../../lib/logger");
 const { buildContextWindow, compressConversation } = require("../../lib/context");
 const { resolveProvider, buildMessageContent, logMessageAttachments } = require("../../lib/utils");
@@ -7,7 +9,67 @@ const { resolveProvider, buildMessageContent, logMessageAttachments } = require(
 module.exports = function createManagementRouter(providerRegistry) {
   const router = Router();
 
-  // ---- System Info ----
+  // ---- Auth (public endpoints — no auth required) ----
+
+  router.get("/api/auth/status", (req, res) => {
+    const authEnabled = config.getSetting("auth_enabled");
+    const hasUsers = config.getUserCount() > 0;
+    res.json({ authEnabled: authEnabled === "true", hasUsers });
+  });
+
+  router.post("/api/auth/login", (req, res) => {
+    const { username, password } = req.body;
+    if (!username || !password) return res.status(400).json({ error: "Username and password are required" });
+
+    const user = config.getUserByUsername(username);
+    if (!user || !bcrypt.compareSync(password, user.password)) {
+      return res.status(401).json({ error: "Invalid credentials" });
+    }
+
+    const token = config.createSession(user.id);
+    res.setHeader("Set-Cookie", `session=${token}; HttpOnly; Path=/; SameSite=Lax; Max-Age=604800`);
+    res.json({ user: { id: user.id, username: user.username, role: user.role } });
+  });
+
+  router.post("/api/auth/logout", (req, res) => {
+    const cookies = parseCookies(req.headers.cookie || "");
+    if (cookies.session) config.deleteSession(cookies.session);
+    res.setHeader("Set-Cookie", "session=; HttpOnly; Path=/; Max-Age=0");
+    res.json({ ok: true });
+  });
+
+  router.get("/api/auth/me", (req, res) => {
+    const authEnabled = config.getSetting("auth_enabled");
+    if (!authEnabled || authEnabled === "false") {
+      return res.json({ user: null, authEnabled: false });
+    }
+
+    const cookies = parseCookies(req.headers.cookie || "");
+    const sessionToken = cookies.session;
+    if (!sessionToken) return res.status(401).json({ error: "Not authenticated" });
+
+    const session = config.getSessionByToken(sessionToken);
+    if (!session) return res.status(401).json({ error: "Invalid or expired session" });
+
+    res.json({ user: { id: session.user_id, username: session.username, role: session.role }, authEnabled: true });
+  });
+
+  // First-time setup: create initial admin user (only works when no users exist)
+  router.post("/api/auth/setup", (req, res) => {
+    if (config.getUserCount() > 0) {
+      return res.status(403).json({ error: "Setup already completed" });
+    }
+    const { username, password } = req.body;
+    if (!username || !password) return res.status(400).json({ error: "Username and password are required" });
+    if (password.length < 6) return res.status(400).json({ error: "Password must be at least 6 characters" });
+
+    const id = config.saveUser({ username, password, role: "admin" });
+    const token = config.createSession(id);
+    res.setHeader("Set-Cookie", `session=${token}; HttpOnly; Path=/; SameSite=Lax; Max-Age=604800`);
+    res.json({ user: { id, username, role: "admin" } });
+  });
+
+  // ---- System Info (public — no auth for health/info) ----
   router.get("/api/info", (req, res) => {
     const settings = config.getAllSettings();
     res.json({
@@ -26,6 +88,61 @@ module.exports = function createManagementRouter(providerRegistry) {
       providers: providerRegistry.listNames().length,
       uptime: process.uptime(),
     });
+  });
+
+  // ---- Auth middleware — protects all subsequent /api/* routes ----
+  router.use("/api", (req, res, next) => {
+    // Skip auth for public endpoints already handled above
+    if (req.path.startsWith("/auth/")) return next();
+    if (req.path === "/info" || req.path === "/health") return next();
+    requireAuth(req, res, next);
+  });
+
+  // ---- Users (protected) ----
+  router.get("/api/users", (req, res) => {
+    res.json(config.getAllUsers());
+  });
+
+  router.post("/api/users", (req, res) => {
+    const { username, password, role } = req.body;
+    if (!username || !password) return res.status(400).json({ error: "Username and password are required" });
+    if (password.length < 6) return res.status(400).json({ error: "Password must be at least 6 characters" });
+    try {
+      const id = config.saveUser({ username, password, role: role || "admin" });
+      res.status(201).json(config.getUser(id));
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  router.put("/api/users/:id", (req, res) => {
+    const user = config.getUser(req.params.id);
+    if (!user) return res.status(404).json({ error: "User not found" });
+    try {
+      config.updateUser(req.params.id, req.body);
+      res.json(config.getUser(req.params.id));
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  router.put("/api/users/:id/password", (req, res) => {
+    const user = config.getUser(req.params.id);
+    if (!user) return res.status(404).json({ error: "User not found" });
+    const { password } = req.body;
+    if (!password || password.length < 6) return res.status(400).json({ error: "Password must be at least 6 characters" });
+    config.changePassword(req.params.id, password);
+    config.deleteUserSessions(req.params.id);
+    res.json({ ok: true });
+  });
+
+  router.delete("/api/users/:id", (req, res) => {
+    try {
+      config.deleteUser(req.params.id);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
   });
 
   // ---- Settings ----
@@ -616,11 +733,11 @@ module.exports = function createManagementRouter(providerRegistry) {
   });
 
   router.post("/api/tokens", (req, res) => {
-    const { name } = req.body;
+    const { name, expires_at } = req.body;
     if (!name) return res.status(400).json({ error: "name is required" });
     const crypto = require("crypto");
     const token = "lap_" + crypto.randomBytes(24).toString("hex");
-    const id = config.saveApiToken({ name, token, enabled: true });
+    const id = config.saveApiToken({ name, token, enabled: true, expires_at: expires_at || null });
     // Return full token only on creation
     res.status(201).json(config.getApiToken(id));
   });
@@ -628,8 +745,12 @@ module.exports = function createManagementRouter(providerRegistry) {
   router.put("/api/tokens/:id", (req, res) => {
     const existing = config.getApiToken(req.params.id);
     if (!existing) return res.status(404).json({ error: "Token not found" });
-    if (req.body.name !== undefined) {
-      config.saveApiToken({ ...existing, name: req.body.name });
+    if (req.body.name !== undefined || req.body.expires_at !== undefined) {
+      config.saveApiToken({
+        ...existing,
+        name: req.body.name !== undefined ? req.body.name : existing.name,
+        expires_at: req.body.expires_at !== undefined ? req.body.expires_at : existing.expires_at,
+      });
     }
     if (req.body.enabled !== undefined) {
       config.updateApiTokenEnabled(req.params.id, req.body.enabled);

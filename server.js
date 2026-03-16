@@ -106,6 +106,7 @@ app.use((req, res, next) => {
       res.setHeader("Access-Control-Allow-Origin", origin);
       res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
       res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, x-api-key, anthropic-version");
+      res.setHeader("Access-Control-Allow-Credentials", "true");
     }
   }
   if (req.method === "OPTIONS") return res.sendStatus(204);
@@ -197,6 +198,11 @@ app.get("*", (req, res) => {
     }
   });
 });
+
+// Clean up expired sessions every hour
+setInterval(() => {
+  try { config.deleteExpiredSessions(); } catch { /* ignore */ }
+}, 3600000);
 
 const server = app.listen(PORT, "0.0.0.0", () => {
   console.log(`\n  Local AI Proxy running at http://localhost:${PORT}`);

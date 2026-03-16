@@ -28,7 +28,7 @@ Open **http://localhost:3199** for the Web dashboard.
 |----------|------|-------------|
 | Claude CLI | `cli` | Spawns `claude -p` process |
 | Gemini CLI | `cli` | Spawns `gemini -p` process |
-| GitHub Copilot | `cli` | Spawns `gh copilot` process |
+| GitHub Copilot | `cli` | Spawns `copilot` process |
 | Ollama | `ollama` | HTTP proxy to local Ollama API |
 | OpenAI Compatible | `openai-api` | Any OpenAI-compatible API (LM Studio, vLLM, etc.) |
 | Anthropic Compatible | `anthropic-api` | Any Anthropic-compatible API |
@@ -149,9 +149,9 @@ local-ai-proxy/
 
 Install the providers you want to use:
 
-- **Claude CLI**: [claude.ai/download](https://claude.ai/download)
-- **Gemini CLI**: via Google
+- **Claude CLI**: [claude.ai](https://claude.ai) (requires access to Claude)
+- **Gemini CLI**: [ai.google.dev](https://ai.google.dev) (requires access to Gemini)
 - **Ollama**: [ollama.com](https://ollama.com)
 - **OpenAI-compatible**: LM Studio, text-generation-webui, vLLM, etc.
-- **GitHub Copilot**: `gh extension install github/gh-copilot`
+- **GitHub Copilot**: `npm install copilot`
 - **Docker** (optional): for sandbox isolation

@@ -1,5 +1,6 @@
 const { Router } = require("express");
 const config = require("../../lib/config");
+const { logRequest } = require("../../lib/logger");
 const { resolveProvider, buildMessageContent, logMessageAttachments } = require("../../lib/utils");
 const { buildContextWindow, compressConversation } = require("../../lib/context");
 
@@ -119,6 +120,7 @@ module.exports = function createOpenAIRouter(providerRegistry) {
         res.setHeader("Connection", "keep-alive");
 
         let fullResponse = "";
+        const streamStart = Date.now();
 
         try {
           const emitter = provider.chatStream(chatMessages, { model });
@@ -144,6 +146,17 @@ module.exports = function createOpenAIRouter(providerRegistry) {
                 content: fullResponse,
               });
             }
+            logRequest({
+              apiFormat: "openai",
+              providerId: providerName || resolvedName,
+              model: model || null,
+              requestBody: { messages: chatMessages.length, model, provider: providerName, stream: true },
+              responseBody: { content_length: fullResponse.length },
+              statusCode: 200,
+              inputTokens: 0,
+              outputTokens: 0,
+              latencyMs: Date.now() - streamStart,
+            });
             res.write("data: [DONE]\n\n");
             res.end();
           };
@@ -152,6 +165,15 @@ module.exports = function createOpenAIRouter(providerRegistry) {
             if (session_id && fullResponse) {
               config.saveMessage({ conversation_id: session_id, role: "assistant", content: fullResponse });
             }
+            logRequest({
+              apiFormat: "openai",
+              providerId: providerName || resolvedName,
+              model: model || null,
+              requestBody: { messages: chatMessages.length, model, provider: providerName, stream: true },
+              statusCode: 500,
+              latencyMs: Date.now() - streamStart,
+              error: err.message,
+            });
             res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`);
             res.end();
           };
