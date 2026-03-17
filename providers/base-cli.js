@@ -18,8 +18,26 @@ function getCleanEnv() {
   return env;
 }
 
+// Shell-quote a single argument so it survives shell: true spawning
+function shellQuote(s) {
+  s = String(s);
+  if (process.platform === "win32") {
+    // cmd.exe: wrap in double quotes, escape internal double quotes as ""
+    return /[\s&<>|^"()%!]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
+  // Unix: single-quote everything, escape embedded single quotes
+  return "'" + s.replace(/'/g, "'\\''") + "'";
+}
+
+// Spawn with shell: true but with each arg properly quoted to prevent word-splitting
+function spawnShell(command, args, options) {
+  const cmd = [command, ...args.map(shellQuote)].join(" ");
+  return spawn(cmd, [], { ...options, shell: true });
+}
+
 // Use home dir as cwd for CLI subprocesses to avoid loading project-level config files (e.g. CLAUDE.md)
 const CLI_CWD = os.homedir();
+
 
 // ─── Persistent CLI Process Pool ───────────────────────────────────────
 // Keeps long-running CLI processes alive between requests.
@@ -43,8 +61,7 @@ class PersistentCLIProcess {
 
   spawn() {
     if (this.alive) return;
-    this.proc = spawn(this.command, this.args, {
-      shell: true,
+    this.proc = spawnShell(this.command, this.args, {
       stdio: ["pipe", "pipe", "pipe"],
       env: this._env,
       cwd: CLI_CWD,
@@ -362,7 +379,6 @@ class BaseCLIProvider {
     // buildPersistentArgs(model) => string[] — args for long-running stdin/stdout process
     // If provided, enables persistent process mode (process stays alive between messages)
     this._buildPersistentArgs = buildPersistentArgs || null;
-
     // Session tracking: sessionId -> { cliSessionId, sentHashes: Set<string> }
     this._sessions = new Map();
   }
@@ -477,13 +493,20 @@ class BaseCLIProvider {
 
     // Spawn mode (original behavior)
     const { prompt, sessionOpts, session, newHashes } = this._preparePrompt(messages, options.session_id);
-    const args = this._buildArgs(prompt, model, sessionOpts);
+    if (!prompt.trim()) {
+      console.log(`[CLI:${this.name}] skipping call — empty prompt`);
+      return makeResponse(this.name, "");
+    }
+    const argsResult = this._buildArgs(prompt, model, sessionOpts);
+    const args = Array.isArray(argsResult) ? argsResult : argsResult.args;
+    const stdinContent = Array.isArray(argsResult) ? null : (argsResult.stdin || null);
 
     const safeArgs = args.map((a, i) => i === args.indexOf(prompt) ? `"${prompt.slice(0, 80)}${prompt.length > 80 ? '...' : ''}"` : a);
     console.log(`[CLI:${this.name}] exec: ${this.command} ${safeArgs.join(' ')}`);
 
     return new Promise((resolve, reject) => {
-      const proc = spawn(this.command, args, { shell: true, stdio: ["ignore", "pipe", "pipe"], env: getCleanEnv(), cwd: CLI_CWD });
+      const proc = spawnShell(this.command, args, { stdio: [stdinContent ? "pipe" : "ignore", "pipe", "pipe"], env: getCleanEnv(), cwd: CLI_CWD });
+      if (stdinContent) { proc.stdin.write(stdinContent, "utf8"); proc.stdin.end(); }
       let stdout = "";
       let stderr = "";
 
@@ -570,11 +593,21 @@ class BaseCLIProvider {
 
     // Spawn mode (original behavior)
     const { prompt, sessionOpts, session, newHashes } = this._preparePrompt(messages, options.session_id);
-    const args = this._buildStreamArgs(prompt, model, sessionOpts);
+    if (!prompt.trim()) {
+      console.log(`[CLI:${this.name}] skipping stream — empty prompt`);
+      const emitter = new EventEmitter();
+      setImmediate(() => emitter.emit('end'));
+      return emitter;
+    }
+    const streamArgsResult = this._buildStreamArgs(prompt, model, sessionOpts);
+    const args = Array.isArray(streamArgsResult) ? streamArgsResult : streamArgsResult.args;
+    const stdinContent = Array.isArray(streamArgsResult) ? null : (streamArgsResult.stdin || null);
 
-    console.log(`[CLI:${this.name}] stream exec: ${this.command} ${args.join(' ')}`);
+    const safeStreamArgs = args.map((a, i) => i === args.indexOf(prompt) ? `"${prompt.slice(0, 80)}${prompt.length > 80 ? '...' : ''}"` : a);
+    console.log(`[CLI:${this.name}] stream exec: ${this.command} ${safeStreamArgs.join(' ')}`);
 
-    const proc = spawn(this.command, args, { shell: true, stdio: ["ignore", "pipe", "pipe"], env: getCleanEnv(), cwd: CLI_CWD });
+    const proc = spawnShell(this.command, args, { stdio: [stdinContent ? "pipe" : "ignore", "pipe", "pipe"], env: getCleanEnv(), cwd: CLI_CWD });
+    if (stdinContent) { proc.stdin.write(stdinContent, "utf8"); proc.stdin.end(); }
 
     // Update session hashes when the process completes
     if (session) {

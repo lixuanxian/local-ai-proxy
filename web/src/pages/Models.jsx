@@ -483,7 +483,7 @@ export default function Models() {
             rules={[{ required: true, message: 'Please enter model name(s)' }]}
             extra={editingRecord ? undefined : "Separate multiple model names with commas"}
           >
-            <Input placeholder="e.g. gpt-4o, claude-sonnet-4-20250514" />
+            <Input placeholder="e.g. gpt-4o, claude-sonnet-4-6" />
           </Form.Item>
           <Form.Item
             name="provider_id"

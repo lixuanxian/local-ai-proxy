@@ -74,7 +74,7 @@ curl http://localhost:3199/v1/chat/completions \
 # Anthropic format
 curl http://localhost:3199/v1/messages \
   -H "Content-Type: application/json" \
-  -d '{"model":"claude-sonnet-4-20250514","messages":[{"role":"user","content":"hello"}]}'
+  -d '{"model":"claude-sonnet-4-6","messages":[{"role":"user","content":"hello"}]}'
 
 # Auto-detect provider from model name
 curl http://localhost:3199/v1/chat/completions \

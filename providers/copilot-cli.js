@@ -50,15 +50,21 @@ module.exports = new BaseCLIProvider({
   },
   parseStreamChunk(line) {
     // json format JSONL: {"type":"assistant.message_delta","data":{"deltaContent":"..."}}
+    // Fallback: {"type":"assistant.message","data":{"content":"..."}} (non-delta mode)
     try {
       const obj = JSON.parse(line);
       if (obj.type === "assistant.message_delta" && obj.data?.deltaContent) {
         return obj.data.deltaContent;
       }
+      if (obj.type === "assistant.message" && obj.data?.content) {
+        return obj.data.content;
+      }
+      // Recognized JSON but no content field — ignore (e.g. result event)
+      return null;
     } catch {
-      // skip non-JSON lines
+      // Not JSON — copilot may output plain text in streaming mode
+      return line || null;
     }
-    return null;
   },
   parseSessionId(stdout) {
     // Extract sessionId from the result event: {"type":"result","sessionId":"<uuid>",...}

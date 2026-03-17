@@ -93,7 +93,7 @@ class ClaudeCompatProvider {
     this.name = name || "claude-api";
     this.baseUrl = baseUrl;
     this.apiKey = apiKey || "";
-    this.defaultModel = defaultModel || "claude-sonnet-4-20250514";
+    this.defaultModel = defaultModel || "claude-sonnet-4-6";
   }
 
   _getTransport(url) {

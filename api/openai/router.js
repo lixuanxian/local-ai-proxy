@@ -4,6 +4,17 @@ const { logRequest } = require("../../lib/logger");
 const { resolveProvider, buildMessageContent, logMessageAttachments } = require("../../lib/utils");
 const { buildContextWindow, compressConversation } = require("../../lib/context");
 
+function estimateMsgTokens(msgs) {
+  let chars = 0;
+  for (const m of (msgs || [])) {
+    if (typeof m.content === "string") chars += m.content.length;
+    else if (Array.isArray(m.content)) {
+      for (const b of m.content) { if (b.text) chars += b.text.length; }
+    }
+  }
+  return Math.ceil(chars / 4);
+}
+
 module.exports = function createOpenAIRouter(providerRegistry) {
   const router = Router();
 
@@ -61,7 +72,7 @@ module.exports = function createOpenAIRouter(providerRegistry) {
       let provider;
 
       // Try DB-configured provider first (supports custom base_url/api_key)
-      const rawDbProvider = config.getProvider(resolvedName) || config.getDefaultProvider();
+      const rawDbProvider = (resolved.dbProviderId && config.getProvider(resolved.dbProviderId)) || config.getProvider(resolvedName) || config.getDefaultProvider();
       const dbProvider = rawDbProvider && rawDbProvider.enabled ? rawDbProvider : null;
       if (dbProvider && dbProvider.base_url) {
         provider = resolveProvider(dbProvider, providerRegistry);

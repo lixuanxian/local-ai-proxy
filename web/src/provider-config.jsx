@@ -311,9 +311,12 @@ export const BASE_URL_PRESETS = {
 export const MODEL_PRESETS = {
   'claude-cli': [
     { label: 'Claude 系列', options: [
-      { value: 'claude-opus-4-20250514', label: 'Claude Opus 4', desc: '最强旗舰模型' },
-      { value: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4', desc: '平衡性能与速度' },
-      { value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5', desc: '快速低成本' },
+      { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6', desc: '平衡性能与速度' },
+      { value: 'claude-opus-4-6', label: 'Claude Opus 4.6', desc: '最强旗舰模型' },
+      { value: 'claude-opus-4-6-fast', label: 'Claude Opus 4.6 Fast', desc: '快速输出' },
+      { value: 'claude-opus-4-5', label: 'Claude Opus 4.5', desc: '' },
+      { value: 'claude-sonnet-4', label: 'Claude Sonnet 4', desc: '' },
+      { value: 'claude-haiku-4-5', label: 'Claude Haiku 4.5', desc: '快速低成本' },
     ]},
   ],
   'copilot-cli': [
@@ -366,9 +369,9 @@ export const MODEL_PRESETS = {
 };
 
 export const DEFAULT_MODELS = {
-  'claude-cli': 'claude-sonnet-4-20250514',
+  'claude-cli': 'claude-sonnet-4-6',
   'copilot-cli': 'claude-sonnet-4.6',
-  'codex-cli': '',
+  'codex-cli': 'gpt-5.2-codex',
   'gemini-cli': 'gemini-3-flash-preview',
   'openai-api': 'gpt-5.2-codex',
   'anthropic-api': 'claude-sonnet-4-6',

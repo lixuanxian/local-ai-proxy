@@ -4,6 +4,17 @@ const { logRequest } = require("../../lib/logger");
 const { resolveProvider, anthropicToInternal, buildMessageContent, logMessageAttachments } = require("../../lib/utils");
 const { buildContextWindow, compressConversation } = require("../../lib/context");
 
+function estimateMsgTokens(msgs) {
+  let chars = 0;
+  for (const m of (msgs || [])) {
+    if (typeof m.content === "string") chars += m.content.length;
+    else if (Array.isArray(m.content)) {
+      for (const b of m.content) { if (b.text) chars += b.text.length; }
+    }
+  }
+  return Math.ceil(chars / 4);
+}
+
 module.exports = function createAnthropicRouter(providerRegistry) {
   const router = Router();
 
@@ -45,7 +56,7 @@ module.exports = function createAnthropicRouter(providerRegistry) {
       let provider;
 
       // Try DB-configured provider first (supports custom base_url/api_key)
-      const rawDbProvider = config.getProvider(resolvedName) || config.getDefaultProvider();
+      const rawDbProvider = (resolved.dbProviderId && config.getProvider(resolved.dbProviderId)) || config.getProvider(resolvedName) || config.getDefaultProvider();
       const dbProvider = rawDbProvider && rawDbProvider.enabled ? rawDbProvider : null;
       if (dbProvider && dbProvider.base_url) {
         provider = resolveProvider(dbProvider, providerRegistry);
@@ -164,8 +175,8 @@ module.exports = function createAnthropicRouter(providerRegistry) {
               requestBody: { messages: chatMessages.length, model, provider: providerName, stream: true },
               responseBody: { content_length: fullResponse.length },
               statusCode: 200,
-              inputTokens: 0,
-              outputTokens: 0,
+              inputTokens: estimateMsgTokens(chatMessages),
+              outputTokens: Math.ceil(fullResponse.length / 4),
               latencyMs: Date.now() - streamStart,
             });
             res.write(`event: content_block_stop\ndata: ${JSON.stringify({ type: "content_block_stop", index: 0 })}\n\n`);

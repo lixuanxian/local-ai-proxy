@@ -5,13 +5,18 @@ const BaseCLIProvider = require("./base-cli");
 // Flags: -p (prompt), -m (model), -o (output-format: text|json|stream-json), -y (yolo)
 // Session: -r/--resume <uuid|index|"latest">, --list-sessions
 // JSON output: {"session_id":"<uuid>","response":"...","stats":{...}}
+//
+// Prompt is passed via stdin (not -p) to avoid Windows cmd.exe argument escaping issues.
+// Characters like % in the prompt get expanded by cmd.exe when passed as CLI args via
+// shell: true, causing spawn EINVAL. Stdin bypasses all shell interpretation.
 module.exports = new BaseCLIProvider({
   name: "gemini",
   command: "gemini",
   supportsSession: true,
   buildArgs(prompt, model, sessionOpts) {
-    // Use json format for non-streaming — includes session_id in output
-    const args = ["-p", prompt, "-o", "json", "-y"];
+    // Use json format for non-streaming — includes session_id in output.
+    // Prompt is passed via stdin; see base-cli.js { args, stdin } return format.
+    const args = ["-o", "json", "-y"];
     if (model) args.push("-m", model);
     if (sessionOpts?.isResume && sessionOpts?.sessionId) {
       // Resume a specific session by UUID
@@ -20,18 +25,19 @@ module.exports = new BaseCLIProvider({
       // No known session ID yet — resume the most recent session
       args.push("--resume", "latest");
     }
-    return args;
+    return { args, stdin: prompt };
   },
   buildStreamArgs(prompt, model, sessionOpts) {
-    // Use stream-json for streaming — delivers incremental chunks
-    const args = ["-p", prompt, "-o", "stream-json", "-y"];
+    // Use stream-json for streaming — delivers incremental chunks.
+    // Prompt is passed via stdin; same reason as buildArgs above.
+    const args = ["-o", "stream-json", "-y"];
     if (model) args.push("-m", model);
     if (sessionOpts?.isResume && sessionOpts?.sessionId) {
       args.push("--resume", sessionOpts.sessionId);
     } else if (sessionOpts?.isResume) {
       args.push("--resume", "latest");
     }
-    return args;
+    return { args, stdin: prompt };
   },
   parseOutput(stdout) {
     // json format: single JSON object with "response" field
