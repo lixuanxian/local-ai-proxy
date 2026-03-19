@@ -136,8 +136,7 @@ Migrations run automatically on startup in `lib/db.js`.
 | Variable | Default | Purpose |
 |---|---|---|
 | `PORT` | 3199 | Server port |
-| `DEFAULT_PROVIDER` | "claude" | Initial default provider |
-| `OLLAMA_HOST` | http://localhost:11434 | Ollama endpoint |
+| `DEFAULT_PROVIDER` | "claude-cli" | Initial default provider |
 | `OPENAI_BASE_URL` | http://localhost:1234 | OpenAI-compat endpoint |
 | `OPENAI_API_KEY` | (empty) | API key for OpenAI-compat |
 

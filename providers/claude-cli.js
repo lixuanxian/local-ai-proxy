@@ -125,12 +125,19 @@ function resolveCliJsPath() {
 /**
  * Build common query options.
  */
+// Detect if running as root/sudo (Linux/macOS) — Claude CLI blocks
+// --dangerously-skip-permissions under root for security reasons.
+const isRoot = typeof process.getuid === 'function' && process.getuid() === 0;
+if (isRoot) {
+  console.warn('[claude-cli] Running as root detected — using "acceptEdits" permission mode instead of "bypassPermissions"');
+}
+
 function buildQueryOptions(model, systemPrompt, options = {}) {
   const opts = {
     model,
     maxTurns: 1,
-    permissionMode: "bypassPermissions",
-    allowDangerouslySkipPermissions: true,
+    permissionMode: isRoot ? "acceptEdits" : "bypassPermissions",
+    allowDangerouslySkipPermissions: !isRoot,
     tools: [],
     persistSession: false,
     pathToClaudeCodeExecutable: resolveCliJsPath(),

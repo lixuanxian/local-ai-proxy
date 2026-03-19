@@ -8,11 +8,10 @@ const crypto = require("crypto");
 // Handle these BEFORE loading anything else so they exit quickly.
 const _isPkgEarly = typeof process.pkg !== 'undefined';
 if (_isPkgEarly) {
-  const cliArgs = process.argv.slice(2).filter(a => a.startsWith('--') && a !== '--debug');
-  if (cliArgs.some(a => ['--status', '--stop', '--restart', '--install-service', '--uninstall-service'].includes(a))) {
-    const { handleCliCommand } = require('./lib/service');
-    if (handleCliCommand(process.argv.slice(2))) process.exit(0);
-  }
+  const { handleCliCommand } = require('./lib/service');
+  // handleCliCommand handles: --help, --status, --stop, --restart, --install-service, --uninstall-service
+  // AND bare run / --start when an instance is already running (shows status + help)
+  if (handleCliCommand(process.argv.slice(2))) process.exit(0);
 }
 
 // --- Runtime extraction: extract embedded assets from pkg snapshot on first run ---

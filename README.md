@@ -137,8 +137,7 @@ curl http://localhost:3199/v1/chat/completions \
 | Variable | Default | Description |
 |---|---|---|
 | `PORT` | `3199` | Server port |
-| `DEFAULT_PROVIDER` | `claude` | Fallback provider |
-| `OLLAMA_HOST` | `http://localhost:11434` | Ollama API address |
+| `DEFAULT_PROVIDER` | `claude-cli` | Fallback provider |
 | `OPENAI_BASE_URL` | `http://localhost:1234` | OpenAI-compatible API address |
 | `OPENAI_API_KEY` | _(empty)_ | API key for OpenAI-compatible backend |
 
@@ -225,7 +224,7 @@ Output goes to `dist/`. The executable runs with a system tray icon and auto-ope
 
 Install the providers you want to use:
 
-- **Claude CLI**：`curl -fsSL https://claude.ai/install.sh | bash` OR access [claude.ai](https://github.com/anthropics/claude-code)
+- **Claude CLI**：`npm install -g @anthropic-ai/claude-code` OR access [claude.ai](https://github.com/anthropics/claude-code)
 - **Gemini CLI**：`npm install -g @google/gemini-cli` OR access [gemini-cli](https://github.com/google/gemini/gemini-cli)
 - **GitHub Copilot**：`npm install -g @github/copilot` OR access [copilot.github.com](https://github.com/features/copilot/cli)
 ## Tech Stack

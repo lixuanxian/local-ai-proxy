@@ -114,8 +114,7 @@ curl http://localhost:3199/v1/chat/completions \
 | 变量 | 默认值 | 说明 |
 |---|---|---|
 | `PORT` | `3199` | 服务器端口 |
-| `DEFAULT_PROVIDER` | `claude` | 默认提供者 |
-| `OLLAMA_HOST` | `http://localhost:11434` | Ollama API 地址 |
+| `DEFAULT_PROVIDER` | `claude-cli` | 默认提供者 |
 | `OPENAI_BASE_URL` | `http://localhost:1234` | OpenAI 兼容 API 地址 |
 | `OPENAI_API_KEY` | _（空）_ | OpenAI 兼容后端的 API 密钥 |
 
@@ -201,7 +200,7 @@ npm run dist:debug
 
 安装你需要使用的 AI 提供者：
 
-- **Claude CLI**：`curl -fsSL https://claude.ai/install.sh | bash` 或访问 [claude.ai](https://github.com/anthropics/claude-code)
+- **Claude CLI**：`npm install -g @anthropic-ai/claude-code` 或访问 [claude.ai](https://github.com/anthropics/claude-code)
 - **Gemini CLI**：`npm install -g @google/gemini-cli` 或访问 [gemini-cli](https://github.com/google/gemini/gemini-cli)
 - **GitHub Copilot**：`npm install -g @github/copilot` 或访问 [copilot.github.com](https://github.com/features/copilot/cli)
 - **OpenAI 兼容**：LM Studio、vLLM 等任何兼容 OpenAI API 的后端
