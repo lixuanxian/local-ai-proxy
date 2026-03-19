@@ -852,6 +852,7 @@ function EmbedTab() {
   const [settings, setSettings] = useState(null);
   const [providers, setProviders] = useState([]);
   const [allSkills, setAllSkills] = useState([]);
+  const [allMcpServers, setAllMcpServers] = useState([]);
   const [tokens, setTokens] = useState([]);
   const [loading, setLoading] = useState(true);
   const iframeRef = useRef(null);
@@ -870,8 +871,10 @@ function EmbedTab() {
     borderRadius: 12,
     systemPrompt: '',
     presets: [],
+    showSkills: true, // whether to show skills bar in embed
     skills: [], // selected skill IDs (empty = all enabled)
-    mcpServers: [], // MCP server metadata [{name, url}]
+    showMcpServers: true, // whether to enable MCP tools in embed
+    mcpServers: [], // selected MCP server IDs (empty = all enabled)
     embedMode: 'inline', // 'inline' or 'floating'
     position: 'br', // 'br' or 'bl'
     token: '', // API token for embed auth
@@ -883,11 +886,12 @@ function EmbedTab() {
   const load = async () => {
     setLoading(true);
     try {
-      const [s, p, sk, t] = await Promise.all([api.getSettings(), api.getProviders(), api.getSkills(), api.getTokens()]);
+      const [s, p, sk, t, mcp] = await Promise.all([api.getSettings(), api.getProviders(), api.getSkills(), api.getTokens(), api.getMcpServers()]);
       setSettings(s);
       setProviders(p.filter(pr => pr.enabled));
       setAllSkills(sk.filter(s => s.enabled));
       setTokens(t.filter(tk => tk.enabled));
+      setAllMcpServers(mcp.filter(m => m.enabled));
     } catch { message.error('Failed to load'); }
     setLoading(false);
   };
@@ -911,8 +915,10 @@ function EmbedTab() {
     if (embedConfig.model) msg.model = embedConfig.model;
     if (embedConfig.systemPrompt) msg.systemPrompt = embedConfig.systemPrompt;
     if (embedConfig.presets.length > 0) msg.presets = embedConfig.presets.filter(Boolean);
+    msg.showSkills = embedConfig.showSkills;
     if (embedConfig.skills.length > 0) msg.skills = embedConfig.skills.join(',');
-    if (embedConfig.mcpServers.length > 0) msg.mcpServers = embedConfig.mcpServers;
+    msg.showMcpServers = embedConfig.showMcpServers;
+    if (embedConfig.mcpServers.length > 0) msg.mcpServers = embedConfig.mcpServers.join(',');
     iframeRef.current.contentWindow.postMessage(msg, '*');
   }, [embedConfig]);
 
@@ -939,7 +945,10 @@ function EmbedTab() {
     if (embedConfig.model) params.set('model', embedConfig.model);
     if (embedConfig.systemPrompt) params.set('systemPrompt', embedConfig.systemPrompt);
     if (embedConfig.presets.length > 0) params.set('presets', embedConfig.presets.join('|'));
+    if (!embedConfig.showSkills) params.set('showSkills', '0');
     if (embedConfig.skills.length > 0) params.set('skills', embedConfig.skills.join(','));
+    if (!embedConfig.showMcpServers) params.set('showMcpServers', '0');
+    if (embedConfig.mcpServers.length > 0) params.set('mcpServers', embedConfig.mcpServers.join(','));
     if (includeMode && embedConfig.embedMode === 'floating') {
       params.set('mode', 'floating');
       params.set('width', String(embedConfig.width));
@@ -1298,99 +1307,116 @@ ${authEnabled ? `
               </>
             )}
 
-            {/* Skills (Optional) */}
-            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
-              Skills
-              <span style={{ fontSize: 10, fontWeight: 400, color: 'var(--text-tertiary)', textTransform: 'none', letterSpacing: 0 }}>Optional</span>
+            {/* Skills */}
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                Skills
+                <span style={{ fontSize: 10, fontWeight: 400, color: 'var(--text-tertiary)', textTransform: 'none', letterSpacing: 0 }}>
+                  {embedConfig.showSkills ? 'Enabled' : 'Disabled'}
+                </span>
+              </span>
+              <Switch
+                size="small"
+                checked={embedConfig.showSkills}
+                onChange={(v) => { updateConfig('showSkills', v); if (!v) updateConfig('skills', []); }}
+              />
             </div>
             <div style={{ display: 'grid', gap: 10, marginBottom: 16 }}>
-              {allSkills.length > 0 ? (
-                <>
-                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 2 }}>
-                    Select skills to show in the widget. None selected = show all enabled skills.
+              {embedConfig.showSkills ? (
+                allSkills.length > 0 ? (
+                  <>
+                    <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 2 }}>
+                      Select skills to show in the widget. None selected = show all enabled skills.
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {allSkills.map(skill => {
+                        const selected = embedConfig.skills.includes(skill.id);
+                        return (
+                          <Tag
+                            key={skill.id}
+                            color={selected ? 'blue' : undefined}
+                            style={{ cursor: 'pointer', userSelect: 'none' }}
+                            onClick={() => {
+                              if (selected) {
+                                updateConfig('skills', embedConfig.skills.filter(id => id !== skill.id));
+                              } else {
+                                updateConfig('skills', [...embedConfig.skills, skill.id]);
+                              }
+                            }}
+                          >
+                            {selected && <CheckCircleOutlined style={{ marginRight: 4 }} />}
+                            {skill.name}
+                          </Tag>
+                        );
+                      })}
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+                    No skills configured. Create skills in the Chat page to use them here.
                   </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                    {allSkills.map(skill => {
-                      const selected = embedConfig.skills.includes(skill.id);
-                      return (
-                        <Tag
-                          key={skill.id}
-                          color={selected ? 'blue' : undefined}
-                          style={{ cursor: 'pointer', userSelect: 'none' }}
-                          onClick={() => {
-                            if (selected) {
-                              updateConfig('skills', embedConfig.skills.filter(id => id !== skill.id));
-                            } else {
-                              updateConfig('skills', [...embedConfig.skills, skill.id]);
-                            }
-                          }}
-                        >
-                          {selected && <CheckCircleOutlined style={{ marginRight: 4 }} />}
-                          {skill.name}
-                        </Tag>
-                      );
-                    })}
-                  </div>
-                </>
+                )
               ) : (
                 <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
-                  No skills configured. Create skills in the Chat page to use them here.
+                  Skills bar will be hidden in the embedded chat widget.
                 </div>
               )}
             </div>
 
-            {/* MCP Servers (Optional) */}
-            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
-              MCP Servers
-              <span style={{ fontSize: 10, fontWeight: 400, color: 'var(--text-tertiary)', textTransform: 'none', letterSpacing: 0 }}>Optional</span>
+            {/* MCP Servers */}
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                MCP Servers
+                <span style={{ fontSize: 10, fontWeight: 400, color: 'var(--text-tertiary)', textTransform: 'none', letterSpacing: 0 }}>
+                  {embedConfig.showMcpServers ? 'Enabled' : 'Disabled'}
+                </span>
+              </span>
+              <Switch
+                size="small"
+                checked={embedConfig.showMcpServers}
+                onChange={(v) => { updateConfig('showMcpServers', v); if (!v) updateConfig('mcpServers', []); }}
+              />
             </div>
             <div style={{ display: 'grid', gap: 10, marginBottom: 16 }}>
-              <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 2 }}>
-                Configure MCP server endpoints as metadata. Tool execution will be available in a future update.
-              </div>
-              {embedConfig.mcpServers.map((srv, i) => (
-                <div key={i} style={{ display: 'flex', gap: 4 }}>
-                  <Input
-                    size="small"
-                    value={srv.name}
-                    onChange={(e) => {
-                      const updated = [...embedConfig.mcpServers];
-                      updated[i] = { ...updated[i], name: e.target.value };
-                      updateConfig('mcpServers', updated);
-                    }}
-                    placeholder="Name"
-                    style={{ width: 100, fontSize: 12 }}
-                  />
-                  <Input
-                    size="small"
-                    value={srv.url}
-                    onChange={(e) => {
-                      const updated = [...embedConfig.mcpServers];
-                      updated[i] = { ...updated[i], url: e.target.value };
-                      updateConfig('mcpServers', updated);
-                    }}
-                    placeholder="URL (e.g. http://localhost:3001)"
-                    style={{ flex: 1, fontSize: 12 }}
-                  />
-                  <Button
-                    size="small"
-                    type="text"
-                    danger
-                    icon={<DeleteOutlined />}
-                    onClick={() => updateConfig('mcpServers', embedConfig.mcpServers.filter((_, j) => j !== i))}
-                  />
+              {embedConfig.showMcpServers ? (
+                allMcpServers.length > 0 ? (
+                  <>
+                    <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 2 }}>
+                      Select MCP servers to enable for tool use. None selected = use all enabled servers.
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {allMcpServers.map(srv => {
+                        const selected = embedConfig.mcpServers.includes(srv.id);
+                        return (
+                          <Tag
+                            key={srv.id}
+                            color={selected ? 'blue' : undefined}
+                            style={{ cursor: 'pointer', userSelect: 'none' }}
+                            onClick={() => {
+                              if (selected) {
+                                updateConfig('mcpServers', embedConfig.mcpServers.filter(id => id !== srv.id));
+                              } else {
+                                updateConfig('mcpServers', [...embedConfig.mcpServers, srv.id]);
+                              }
+                            }}
+                          >
+                            {selected && <CheckCircleOutlined style={{ marginRight: 4 }} />}
+                            {srv.name}
+                          </Tag>
+                        );
+                      })}
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+                    No MCP servers configured. Add servers in Settings to use them here.
+                  </div>
+                )
+              ) : (
+                <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+                  MCP tool use will be disabled in the embedded chat widget.
                 </div>
-              ))}
-              <Button
-                size="small"
-                type="dashed"
-                icon={<PlusOutlined />}
-                onClick={() => updateConfig('mcpServers', [...embedConfig.mcpServers, { name: '', url: '' }])}
-                disabled={embedConfig.mcpServers.length >= 5}
-                style={{ width: 'fit-content' }}
-              >
-                Add Server
-              </Button>
+              )}
             </div>
           </div>
 
@@ -1522,7 +1548,7 @@ ${authEnabled ? `
 
         <div style={{ display: 'grid', gap: 8 }}>
           {[
-            { dir: 'Parent → Widget', msg: '{ type: "config", theme?, accent?, title?, token?, provider?, model?, systemPrompt?, presets?, skills?, mcpServers? }', desc: 'Configure the widget' },
+            { dir: 'Parent → Widget', msg: '{ type: "config", theme?, accent?, title?, token?, provider?, model?, systemPrompt?, presets?, showSkills?, skills?, showMcpServers?, mcpServers? }', desc: 'Configure the widget' },
             { dir: 'Parent → Widget', msg: '{ type: "message", content }', desc: 'Send a message programmatically' },
             { dir: 'Parent → Widget', msg: '{ type: "clear" }', desc: 'Clear chat history' },
             { dir: 'Parent → Widget', msg: '{ type: "toggle" }', desc: 'Toggle floating panel open/closed' },
@@ -1567,7 +1593,10 @@ ${authEnabled ? `
             { param: 'model', type: 'string', desc: 'Model name', default: 'auto' },
             { param: 'systemPrompt', type: 'string', desc: 'System prompt for the AI', default: '—' },
             { param: 'presets', type: 'string', desc: 'Preset questions separated by "|"', default: '—' },
+            { param: 'showSkills', type: 'string', desc: '"0" to hide skills bar', default: '(shown)' },
             { param: 'skills', type: 'string', desc: 'Skill IDs separated by "," (empty = all)', default: '(all)' },
+            { param: 'showMcpServers', type: 'string', desc: '"0" to disable MCP tools', default: '(enabled)' },
+            { param: 'mcpServers', type: 'string', desc: 'MCP server IDs separated by ","', default: '(all)' },
             { param: 'mode', type: 'string', desc: '"floating" for bubble+panel mode', default: '(inline)' },
             { param: 'width', type: 'number', desc: 'Panel width in px (floating mode)', default: '380' },
             { param: 'height', type: 'number', desc: 'Panel height in px (floating mode)', default: '520' },

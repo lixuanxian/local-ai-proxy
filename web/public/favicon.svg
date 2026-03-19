@@ -1,11 +1,38 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <defs>
-    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#6366f1"/>
-      <stop offset="50%" stop-color="#8b5cf6"/>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#1e1b4b"/>
+    </linearGradient>
+    <linearGradient id="l1" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#818cf8"/>
+      <stop offset="100%" stop-color="#6366f1"/>
+    </linearGradient>
+    <linearGradient id="l2" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#a78bfa"/>
+      <stop offset="100%" stop-color="#8b5cf6"/>
+    </linearGradient>
+    <linearGradient id="l3" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#c4b5fd"/>
       <stop offset="100%" stop-color="#a78bfa"/>
     </linearGradient>
   </defs>
-  <rect width="64" height="64" rx="14" fill="url(#g)"/>
-  <text x="32" y="42" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,sans-serif" font-weight="800" font-size="26" fill="white">AI</text>
+
+  <!-- Dark background -->
+  <rect width="512" height="512" rx="108" fill="url(#bg)"/>
+
+  <!-- 左侧三个圆点 -->
+  <circle cx="116" cy="152" r="28" fill="url(#l1)"/>
+  <circle cx="116" cy="256" r="28" fill="url(#l2)"/>
+  <circle cx="116" cy="360" r="28" fill="url(#l3)"/>
+
+  <!-- 三条粗圆角线汇聚 -->
+  <path d="M144 152 Q280 152 340 240" fill="none" stroke="url(#l1)" stroke-width="20" stroke-linecap="round"/>
+  <path d="M144 256 Q280 256 340 256" fill="none" stroke="url(#l2)" stroke-width="20" stroke-linecap="round"/>
+  <path d="M144 360 Q280 360 340 272" fill="none" stroke="url(#l3)" stroke-width="20" stroke-linecap="round"/>
+
+  <!-- 右侧汇聚大圆 -->
+  <circle cx="376" cy="256" r="48" fill="#8b5cf6"/>
+  <circle cx="376" cy="256" r="32" fill="#a78bfa"/>
+  <circle cx="376" cy="256" r="16" fill="white" opacity="0.95"/>
 </svg>

@@ -8,3 +8,8 @@ dist/
 settings.local.json
 
 *.test.sh
+
+config.json
+
+tmpclaude*
+nul

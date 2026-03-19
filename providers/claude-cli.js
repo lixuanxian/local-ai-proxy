@@ -1,4 +1,5 @@
 const { EventEmitter } = require("events");
+const path = require("path");
 const fs = require("fs");
 const { execSync } = require("child_process");
 const { makeResponse, normalizeClaudeModel } = require("../lib/utils");
@@ -12,6 +13,10 @@ const { makeResponse, normalizeClaudeModel } = require("../lib/utils");
  *
  * The Agent SDK is ESM-only, so we load it via dynamic import().
  */
+
+// Use indirect import() so esbuild won't transform it to require() in the CJS bundle.
+// This preserves the real ESM dynamic import for non-pkg environments.
+const dynamicImport = new Function("specifier", "return import(specifier)");
 
 let sdkModule = null;
 async function loadSDK() {
@@ -53,7 +58,14 @@ if ($git) {
         // PowerShell unavailable or git not found — proceed without setting the path
       }
     }
-    sdkModule = await import("@anthropic-ai/claude-agent-sdk");
+    // In pkg mode, dynamic import() is not available (V8 snapshot limitation).
+    // Use the pre-built CJS bundle created by build-server.js instead.
+    if (typeof process.pkg !== 'undefined') {
+      const cjsBundle = path.join(path.dirname(process.execPath), 'claude-agent-sdk.cjs');
+      sdkModule = require(cjsBundle);
+    } else {
+      sdkModule = await dynamicImport("@anthropic-ai/claude-agent-sdk");
+    }
   }
   return sdkModule;
 }

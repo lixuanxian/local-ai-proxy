@@ -40,7 +40,7 @@ const NotFound = lazy(() => import('./pages/NotFound'));
 
 const menuItems = [
   { key: '/', icon: <DashboardOutlined />, label: 'Dashboard' },
-  { key: '/chat', icon: <MessageOutlined />, label: 'Chat' },
+  { key: '/chat', icon: <MessageOutlined />, label: 'Chat (beta)' },
   { key: '/providers', icon: <ApiOutlined />, label: 'Providers' },
   { key: '/models', icon: <RobotOutlined />, label: 'Models' },
   { key: '/logs', icon: <FileTextOutlined />, label: 'Logs' },
@@ -51,7 +51,7 @@ const menuItems = [
 
 const pageNames = {
   '/': 'Dashboard',
-  '/chat': 'Chat',
+  '/chat': 'Chat (beta)',
   '/providers': 'Providers',
   '/models': 'Models',
   '/logs': 'Logs',
@@ -328,7 +328,7 @@ export default function App() {
 
       <div className={`sidebar ${collapsed ? 'collapsed' : ''} ${mobileOpen ? 'mobile-open' : ''}`}>
         <div className="sidebar-logo">
-          <div className="sidebar-logo-icon">AI</div>
+          <img className="sidebar-logo-icon" src="/favicon.svg" alt="Logo" />
           {(!collapsed || mobileOpen) && (
             <div className="sidebar-logo-text">
               Local AI Proxy

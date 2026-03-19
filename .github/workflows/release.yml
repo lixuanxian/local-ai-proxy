@@ -1,0 +1,97 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: node22-win-x64
+            output: local-ai-proxy-windows.exe
+            pkg_cmd: npx @yao-pkg/pkg dist/server.bundle.cjs --target node22-win-x64 --output dist/local-ai-proxy-windows.exe
+
+          - os: macos-latest
+            target: node22-mac-arm64
+            output: local-ai-proxy-macos-arm64
+            pkg_cmd: npx @yao-pkg/pkg dist/server.bundle.cjs --target node22-mac-arm64 --output dist/local-ai-proxy-macos-arm64
+
+          - os: macos-13
+            target: node22-mac-x64
+            output: local-ai-proxy-macos-x64
+            pkg_cmd: npx @yao-pkg/pkg dist/server.bundle.cjs --target node22-mac-x64 --output dist/local-ai-proxy-macos-x64
+
+          - os: ubuntu-latest
+            target: node22-linux-x64
+            output: local-ai-proxy-linux
+            pkg_cmd: npx @yao-pkg/pkg dist/server.bundle.cjs --target node22-linux-x64 --output dist/local-ai-proxy-linux
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install web dependencies
+        run: cd web && npm ci
+
+      - name: Build frontend
+        run: cd web && npm run build
+
+      - name: Build server bundle
+        run: node scripts/build-server.js
+
+      - name: Build icon (Windows only)
+        if: runner.os == 'Windows'
+        run: node scripts/build-icon.js
+
+      - name: Package executable (single file with embedded assets)
+        run: ${{ matrix.pkg_cmd }}
+
+      - name: Embed icon into exe (Windows only)
+        if: runner.os == 'Windows'
+        run: node scripts/set-icon.js
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.output }}
+          path: dist/${{ matrix.output }}
+          retention-days: 7
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/local-ai-proxy-windows.exe/local-ai-proxy-windows.exe
+            artifacts/local-ai-proxy-macos-arm64/local-ai-proxy-macos-arm64
+            artifacts/local-ai-proxy-macos-x64/local-ai-proxy-macos-x64
+            artifacts/local-ai-proxy-linux/local-ai-proxy-linux
+          generate_release_notes: true

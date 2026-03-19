@@ -84,8 +84,10 @@ export default function EmbedChat() {
     welcome: 'Send a message to start chatting',
     systemPrompt: null,
     presets: [], // preset questions for quick start
+    showSkills: true, // whether to show skills bar
     skills: [], // skill IDs to show (empty = all enabled)
-    mcpServers: [], // MCP server metadata [{name, url}]
+    showMcpServers: true, // whether to enable MCP tools
+    mcpServers: [], // MCP server IDs to use (empty = all enabled)
     mode: null, // null = inline (default), 'floating' = bubble + panel
     width: 380,
     height: 520,
@@ -111,7 +113,10 @@ export default function EmbedChat() {
     if (params.get('width')) initial.width = parseInt(params.get('width'), 10) || 380;
     if (params.get('height')) initial.height = parseInt(params.get('height'), 10) || 520;
     if (params.get('presets')) initial.presets = params.get('presets').split('|').filter(Boolean);
+    if (params.get('showSkills') === '0') initial.showSkills = false;
     if (params.get('skills')) initial.skills = params.get('skills').split(',').filter(Boolean);
+    if (params.get('showMcpServers') === '0') initial.showMcpServers = false;
+    if (params.get('mcpServers')) initial.mcpServers = params.get('mcpServers').split(',').filter(Boolean);
     if (Object.keys(initial).length > 0) {
       setConfig(prev => ({ ...prev, ...initial }));
     }
@@ -135,13 +140,14 @@ export default function EmbedChat() {
 
   const isDark = config.theme === 'dark';
 
-  // Filter skills: if config.skills is set, show only those; otherwise show all enabled
+  // Filter skills: if showSkills is false, none; if config.skills is set, show only those; otherwise show all enabled
   const visibleSkills = useMemo(() => {
+    if (!config.showSkills) return [];
     if (config.skills.length > 0) {
       return availableSkills.filter(s => config.skills.includes(s.id));
     }
     return availableSkills;
-  }, [availableSkills, config.skills]);
+  }, [availableSkills, config.skills, config.showSkills]);
 
   const theme = useMemo(() => {
     const accent = config.accent || '#6366f1';
@@ -285,8 +291,10 @@ export default function EmbedChat() {
         if (update.skills && typeof update.skills === 'string') {
           update.skills = update.skills.split(',').filter(Boolean);
         }
+        if (update.showSkills !== undefined) update.showSkills = update.showSkills !== false && update.showSkills !== '0' && update.showSkills !== 0;
+        if (update.showMcpServers !== undefined) update.showMcpServers = update.showMcpServers !== false && update.showMcpServers !== '0' && update.showMcpServers !== 0;
         if (update.mcpServers && typeof update.mcpServers === 'string') {
-          try { update.mcpServers = JSON.parse(update.mcpServers); } catch { update.mcpServers = []; }
+          update.mcpServers = update.mcpServers.split(',').filter(Boolean);
         }
         setConfig(prev => ({ ...prev, ...update }));
       }
@@ -477,7 +485,7 @@ export default function EmbedChat() {
       )}
 
       {/* Skills bar */}
-      {visibleSkills.length > 0 && (
+      {config.showSkills && visibleSkills.length > 0 && (
         <div style={{
           display: 'flex', gap: 4, padding: '6px 12px',
           borderTop: `1px solid ${theme.border}`,

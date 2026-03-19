@@ -3,13 +3,34 @@
   "version": "1.0.0",
   "description": "A unified API proxy for multiple local AI clients",
   "main": "server.js",
+  "bin": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "concurrently  \"npm run dev:server\" \"npm run dev:web\"",
     "dev:server": "node --watch server.js",
     "dev:web": "cd web && npm run dev",
     "build:web": "cd web && npm run build",
-    "setup": "npm install && cd web && npm install && npm run build"
+    "build:icon": "node scripts/build-icon.js",
+    "build:server": "node scripts/build-server.js",
+    "setup": "npm install && cd web && npm install && npm run build",
+    "pkg:win": "npx @yao-pkg/pkg dist/server.bundle.cjs --target node22-win-x64   --output dist/local-ai-proxy-windows.exe",
+    "pkg:mac-arm64": "npx @yao-pkg/pkg dist/server.bundle.cjs --target node22-mac-arm64 --output dist/local-ai-proxy-macos-arm64",
+    "pkg:mac-x64": "npx @yao-pkg/pkg dist/server.bundle.cjs --target node22-mac-x64   --output dist/local-ai-proxy-macos-x64",
+    "pkg:linux": "npx @yao-pkg/pkg dist/server.bundle.cjs --target node22-linux-x64 --output dist/local-ai-proxy-linux",
+    "dist:win": "node scripts/build-icon.js && npm run build:web && npm run build:server && npm run pkg:win && node scripts/post-pkg.js && node scripts/set-icon.js",
+    "dist:mac": "npm run build:web && npm run build:server && npm run pkg:mac-arm64 && npm run pkg:mac-x64 && node scripts/post-pkg.js",
+    "dist:linux": "npm run build:web && npm run build:server && npm run pkg:linux && node scripts/post-pkg.js",
+    "dist": "npm run dist:win",
+    "dist:debug": "npm run build:server && npm run pkg:win && node scripts/post-pkg.js && scripts\\debug-exe.bat"
+  },
+  "pkg": {
+    "outputPath": "dist",
+    "assets": [
+      "public/**/*",
+      "assets/icon.ico",
+      "node_modules/better-sqlite3/build/Release/better_sqlite3.node",
+      "node_modules/@anthropic-ai/claude-agent-sdk/**/*"
+    ]
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.76",
@@ -17,6 +38,14 @@
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^12.6.2",
     "express": "^4.21.0",
-    "multer": "^2.1.1"
+    "multer": "^2.1.1",
+    "systray2": "^2.1.4"
+  },
+  "devDependencies": {
+    "@yao-pkg/pkg": "^5.16.1",
+    "esbuild": "^0.25.12",
+    "png-to-ico": "^2.1.8",
+    "rcedit": "^3.0.1",
+    "sharp": "^0.33.5"
   }
 }

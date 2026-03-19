@@ -3,19 +3,110 @@ const path = require("path");
 const fs = require("fs");
 const multer = require("multer");
 const crypto = require("crypto");
+
+// --- CLI commands: --status, --stop, --restart, --install-service, --uninstall-service ---
+// Handle these BEFORE loading anything else so they exit quickly.
+const _isPkgEarly = typeof process.pkg !== 'undefined';
+if (_isPkgEarly) {
+  const cliArgs = process.argv.slice(2).filter(a => a.startsWith('--') && a !== '--debug');
+  if (cliArgs.some(a => ['--status', '--stop', '--restart', '--install-service', '--uninstall-service'].includes(a))) {
+    const { handleCliCommand } = require('./lib/service');
+    if (handleCliCommand(process.argv.slice(2))) process.exit(0);
+  }
+}
+
+// --- Runtime extraction: extract embedded assets from pkg snapshot on first run ---
+if (_isPkgEarly) {
+  const { extractRuntime } = require('./lib/runtime-extract');
+  extractRuntime();
+}
+
+// --- Debug mode: node server.js --debug  or  DEBUG=1 ---
+const DEBUG = process.argv.includes('--debug') || process.env.DEBUG === '1';
+const _isPkg = typeof process.pkg !== 'undefined';
+
+function getLogBase() {
+  return _isPkg ? path.dirname(process.execPath) : path.resolve(__dirname);
+}
+
+function debugLog(...args) {
+  if (!DEBUG) return;
+  const msg = `[DEBUG] ${args.join(' ')}`;
+  console.log(msg);
+  try {
+    fs.appendFileSync(path.join(getLogBase(), 'debug.log'), `[${new Date().toISOString()}] ${msg}\n`);
+  } catch {}
+}
+
+// --- Global error capture: writes error.log beside exe on crash ---
+process.on('uncaughtException', (err) => {
+  const logPath = path.join(getLogBase(), 'error.log');
+  const msg = `[${new Date().toISOString()}] UNCAUGHT: ${err.stack}\n`;
+  try { fs.appendFileSync(logPath, msg); } catch {}
+  console.error('[FATAL]', err.stack);
+  // In pkg debug mode, keep console open so user can read the error
+  if (_isPkg && DEBUG) {
+    console.error('\n  Press any key to exit...');
+    try {
+      fs.readSync(0, Buffer.alloc(1), 0, 1, null);
+    } catch {}
+  }
+  process.exit(1);
+});
+process.on('unhandledRejection', (reason) => {
+  const logPath = path.join(getLogBase(), 'error.log');
+  const msg = `[${new Date().toISOString()}] UNHANDLED REJECTION: ${reason instanceof Error ? reason.stack : reason}\n`;
+  try { fs.appendFileSync(logPath, msg); } catch {}
+  console.error('[FATAL REJECTION]', reason instanceof Error ? reason.stack : reason);
+  if (_isPkg && DEBUG) {
+    console.error('\n  Press any key to exit...');
+    try {
+      fs.readSync(0, Buffer.alloc(1), 0, 1, null);
+    } catch {}
+  }
+  process.exit(1);
+});
+
+debugLog('Node.js', process.version);
+debugLog('argv:', process.argv.join(' '));
+debugLog('isPkg:', _isPkg);
+debugLog('execPath:', process.execPath);
+debugLog('cwd:', process.cwd());
+debugLog('__dirname:', __dirname);
+debugLog('platform:', process.platform, process.arch);
+
+debugLog('Loading paths module...');
+const { isPkg, getUploadsDir, getPublicDir, debugPaths } = require("./lib/paths");
+if (DEBUG) debugPaths(debugLog);
+
+debugLog('Loading provider-registry...');
 const { createDefaultRegistry } = require("./lib/provider-registry");
+debugLog('Loading logger...');
 const { loggerMiddleware } = require("./lib/logger");
+debugLog('Loading routers...');
 const createOpenAIRouter = require("./api/openai/router");
 const createAnthropicRouter = require("./api/anthropic/router");
 const createManagementRouter = require("./api/management/router");
+debugLog('All modules loaded.');
+
+// Load config.json early so port override is applied before the server binds
+debugLog('Loading config.json...');
+const { loadConfigFile, createDefaultConfigFile, applyConfig } = require("./lib/config-loader");
+const _userConfig = loadConfigFile();
+debugLog('Config loaded:', _userConfig ? 'found' : 'not found');
+if (_userConfig && _userConfig.port) process.env.PORT = String(_userConfig.port);
 
 const config = require("./lib/config");
+
+// Create default config.json template if it doesn't exist; apply providers/users/settings
+createDefaultConfigFile();
+if (_userConfig) applyConfig(_userConfig);
 
 const app = express();
 app.use(express.json({ limit: "50mb" }));
 
 // Uploads directory
-const UPLOADS_DIR = path.join(__dirname, "data", "uploads");
+const UPLOADS_DIR = getUploadsDir();
 if (!fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 }
@@ -191,11 +282,11 @@ app.use(createAnthropicRouter(registry));
 app.use(createManagementRouter(registry));
 
 // Serve static Web UI
-app.use(express.static(path.join(__dirname, "public")));
+app.use(express.static(getPublicDir()));
 
 // SPA fallback
 app.get("*", (req, res) => {
-  const indexPath = path.join(__dirname, "public", "index.html");
+  const indexPath = path.join(getPublicDir(), "index.html");
   res.sendFile(indexPath, (err) => {
     if (err) {
       res.json({
@@ -230,6 +321,18 @@ const server = app.listen(PORT, "0.0.0.0", () => {
     }
   } catch { /* mcp_servers table may not exist yet */ }
   console.log();
+
+  // Write PID file for CLI management (all platforms)
+  if (isPkg) {
+    try {
+      const { writePidFile } = require('./lib/service');
+      writePidFile();
+    } catch { /* ignore */ }
+  }
+
+  // System tray + auto-open browser when running as packaged executable
+  const { initTray } = require('./lib/tray');
+  initTray(PORT, shutdown, isPkg, DEBUG);
 });
 
 server.on("error", (err) => {
@@ -243,6 +346,16 @@ server.on("error", (err) => {
 
 // Graceful shutdown — release port before --watch restarts
 function shutdown() {
+  // Remove PID file (Linux)
+  try {
+    const { removePidFile } = require('./lib/service');
+    removePidFile();
+  } catch { /* ignore */ }
+  // Kill tray icon
+  try {
+    const { killTray } = require('./lib/tray');
+    killTray();
+  } catch { /* ignore */ }
   // Disconnect MCP clients
   try {
     const mcpClientManager = require("./lib/mcp-client");

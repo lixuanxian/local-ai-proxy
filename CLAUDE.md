@@ -201,6 +201,44 @@ Database: `mcp_servers` (id, name, url, transport_type, headers, enabled, sort_o
 
 Settings UI: MCP server cards with add/edit/delete, enable toggle, connection test, tools viewer
 
+## Packaging & Distribution
+
+Uses **esbuild** to bundle into a single CJS file, then **@yao-pkg/pkg** to create standalone executables.
+
+### Build Pipeline
+
+```bash
+npm run dist:win      # Full Windows build (icon → frontend → bundle → pkg → post-pkg → set-icon)
+npm run dist:mac      # macOS builds (arm64 + x64)
+npm run dist:linux    # Linux build (x64)
+npm run dist:debug    # Quick debug build (bundle → pkg → post-pkg → launch with --debug)
+```
+
+### Key Files
+
+| File | Purpose |
+|---|---|
+| `scripts/build-server.js` | esbuild config — bundles server.js into `dist/server.bundle.cjs` |
+| `scripts/post-pkg.js` | Copies `better_sqlite3.node` and `public/` next to exe (pkg can't embed these) |
+| `scripts/build-icon.js` | Generates ICO from SVG for Windows exe |
+| `scripts/set-icon.js` | Applies icon to exe via rcedit |
+| `scripts/debug-exe.bat` | Launches exe with `DEBUG=1 --debug` and keeps console open |
+| `lib/paths.js` | Path resolution — returns real filesystem paths in pkg mode, project-relative in dev |
+
+### pkg Constraints
+
+- **Native `.node` files** (better-sqlite3) must exist on real filesystem, not in pkg snapshot — `post-pkg.js` copies them next to the exe
+- **Static assets** (`public/`) must also be on real filesystem for Express static serving — `post-pkg.js` copies the directory
+- **Provider requires** must use static string literals (not variables) so esbuild/pkg can resolve them — `provider-registry.js` uses lazy closures: `() => require("../providers/xxx")`
+- **External packages** in esbuild: `better-sqlite3` (native), `@anthropic-ai/claude-agent-sdk` (ESM-only), dev deps
+
+### Debug Mode
+
+Activate with `--debug` flag or `DEBUG=1` env var:
+- Logs all path resolution, module loading, and DB initialization to console and `debug.log`
+- In pkg mode, fatal errors pause with "Press any key to exit" so the console stays open
+- `lib/paths.js:debugPaths()` dumps all resolved paths with existence checks
+
 ## Key Conventions
 
 - **No test framework** — the project has no unit/integration tests
