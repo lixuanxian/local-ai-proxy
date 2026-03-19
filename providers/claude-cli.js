@@ -23,9 +23,24 @@ async function loadSDK() {
   if (!sdkModule) {
     // Auto-detect git bash on Windows if not configured
     if (process.platform === "win32" && !process.env.CLAUDE_CODE_GIT_BASH_PATH) {
+      const bashCandidates = [];
+      // Method 1: Use `where git` to find git, derive bash path from it
       try {
-        // Query registry for Git install path, fall back to PATH lookup
-        const ps = `
+        const gitPaths = execSync("where git", {
+          timeout: 5000, encoding: "utf8", windowsHide: true,
+        }).trim().split(/\r?\n/);
+        for (const gitPath of gitPaths) {
+          // git.exe is typically at <git-root>/cmd/git.exe or <git-root>/mingw64/bin/git.exe
+          const gitDir = path.dirname(gitPath);
+          const gitRoot = path.dirname(gitDir);
+          const bashPath = path.join(gitRoot, "usr", "bin", "bash.exe");
+          if (fs.existsSync(bashPath)) bashCandidates.push(bashPath);
+        }
+      } catch { /* where git failed */ }
+      // Method 2: PowerShell registry lookup
+      if (bashCandidates.length === 0) {
+        try {
+          const ps = `
 $path = $null
 try {
   $path = (Get-ItemProperty 'HKLM:\\SOFTWARE\\GitForWindows' -ErrorAction Stop).InstallPath
@@ -39,29 +54,28 @@ if ($path) {
   $bash = Join-Path $path 'usr\\bin\\bash.exe'
   if (Test-Path $bash) { $bash; exit }
 }
-$git = Get-Command git -ErrorAction SilentlyContinue
-if ($git) {
-  $bash = Join-Path (Split-Path (Split-Path $git.Source)) 'usr\\bin\\bash.exe'
-  if (Test-Path $bash) { $bash; exit }
-}
 `.trim();
-        const result = execSync(`powershell -NoProfile -NonInteractive -Command "${ps.replace(/"/g, '\\"')}"`, {
-          timeout: 5000,
-          encoding: "utf8",
-          windowsHide: true,
-        }).trim();
-        if (result && fs.existsSync(result)) {
-          process.env.CLAUDE_CODE_GIT_BASH_PATH = result;
-          console.log(`[claude-cli] Auto-detected git bash: ${result}`);
-        }
-      } catch {
-        // PowerShell unavailable or git not found — proceed without setting the path
+          const result = execSync(`powershell -NoProfile -NonInteractive -Command "${ps.replace(/"/g, '\\"')}"`, {
+            timeout: 5000, encoding: "utf8", windowsHide: true,
+          }).trim();
+          if (result && fs.existsSync(result)) bashCandidates.push(result);
+        } catch { /* PowerShell unavailable */ }
+      }
+      if (bashCandidates.length > 0) {
+        process.env.CLAUDE_CODE_GIT_BASH_PATH = path.resolve(bashCandidates[0]);
+        console.log(`[claude-cli] Auto-detected git bash: ${process.env.CLAUDE_CODE_GIT_BASH_PATH}`);
       }
     }
     // In pkg mode, dynamic import() is not available (V8 snapshot limitation).
     // Use the pre-built CJS bundle created by build-server.js instead.
     if (typeof process.pkg !== 'undefined') {
       const cjsBundle = path.join(path.dirname(process.execPath), 'claude-agent-sdk.cjs');
+      if (!fs.existsSync(cjsBundle)) {
+        throw new Error(
+          `Claude CLI provider requires companion file "claude-agent-sdk.cjs" next to the exe. ` +
+          `Copy all files from the dist/ folder, not just the exe.`
+        );
+      }
       sdkModule = require(cjsBundle);
     } else {
       sdkModule = await dynamicImport("@anthropic-ai/claude-agent-sdk");
@@ -96,6 +110,19 @@ function extractSystemPrompt(messages) {
 }
 
 /**
+ * Resolve the path to the SDK's cli.js entry point.
+ * In pkg mode, cli.js must be a companion file next to the exe.
+ * In dev mode, resolve from node_modules.
+ */
+function resolveCliJsPath() {
+  if (typeof process.pkg !== 'undefined') {
+    return path.join(path.dirname(process.execPath), 'cli.js');
+  }
+  const sdkDir = path.dirname(require.resolve('@anthropic-ai/claude-agent-sdk/sdk.mjs'));
+  return path.join(sdkDir, 'cli.js');
+}
+
+/**
  * Build common query options.
  */
 function buildQueryOptions(model, systemPrompt, options = {}) {
@@ -106,6 +133,7 @@ function buildQueryOptions(model, systemPrompt, options = {}) {
     allowDangerouslySkipPermissions: true,
     tools: [],
     persistSession: false,
+    pathToClaudeCodeExecutable: resolveCliJsPath(),
   };
   if (systemPrompt) opts.systemPrompt = systemPrompt;
   if (options.temperature != null) {
@@ -131,6 +159,7 @@ class ClaudeCLIProvider {
     const prompt = extractPrompt(messages);
     const systemPrompt = extractSystemPrompt(messages);
     const queryOpts = buildQueryOptions(model, systemPrompt, options);
+    queryOpts.stderr = (data) => console.error(`[SDK:claude-cli:stderr] ${data}`);
 
     console.log(`[SDK:claude-cli] query model=${model}`);
 
@@ -215,6 +244,7 @@ class ClaudeCLIProvider {
       const queryOpts = {
         ...buildQueryOptions(model, systemPrompt, options),
         includePartialMessages: true,
+        stderr: (data) => console.error(`[SDK:claude-cli:stderr] ${data}`),
       };
 
       console.log(`[SDK:claude-cli] stream query model=${model}`);

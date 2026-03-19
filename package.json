@@ -13,13 +13,13 @@
     "build:icon": "node scripts/build-icon.js",
     "build:server": "node scripts/build-server.js",
     "setup": "npm install && cd web && npm install && npm run build",
-    "pkg:win": "npx @yao-pkg/pkg dist/server.bundle.cjs --target node22-win-x64   --output dist/local-ai-proxy-windows.exe",
-    "pkg:mac-arm64": "npx @yao-pkg/pkg dist/server.bundle.cjs --target node22-mac-arm64 --output dist/local-ai-proxy-macos-arm64",
-    "pkg:mac-x64": "npx @yao-pkg/pkg dist/server.bundle.cjs --target node22-mac-x64   --output dist/local-ai-proxy-macos-x64",
-    "pkg:linux": "npx @yao-pkg/pkg dist/server.bundle.cjs --target node22-linux-x64 --output dist/local-ai-proxy-linux",
-    "dist:win": "node scripts/build-icon.js && npm run build:web && npm run build:server && npm run pkg:win && node scripts/post-pkg.js && node scripts/set-icon.js",
-    "dist:mac": "npm run build:web && npm run build:server && npm run pkg:mac-arm64 && npm run pkg:mac-x64 && node scripts/post-pkg.js",
-    "dist:linux": "npm run build:web && npm run build:server && npm run pkg:linux && node scripts/post-pkg.js",
+    "pkg:win": "npx @yao-pkg/pkg dist/server.bundle.cjs --target node22-win-x64   --output dist/local-ai-proxy-windows.exe --config pkg.json",
+    "pkg:mac-arm64": "npx @yao-pkg/pkg dist/server.bundle.cjs --target node22-mac-arm64 --output dist/local-ai-proxy-macos-arm64 --config pkg.json",
+    "pkg:mac-x64": "npx @yao-pkg/pkg dist/server.bundle.cjs --target node22-mac-x64   --output dist/local-ai-proxy-macos-x64 --config pkg.json",
+    "pkg:linux": "npx @yao-pkg/pkg dist/server.bundle.cjs --target node22-linux-x64 --output dist/local-ai-proxy-linux --config pkg.json",
+    "dist:win": "node scripts/build-icon.js && npm run build:web && npm run build:server && npm run pkg:win && node scripts/post-pkg.js && node scripts/set-icon.js && node scripts/pack-dist.js win",
+    "dist:mac": "npm run build:web && npm run build:server && npm run pkg:mac-arm64 && npm run pkg:mac-x64 && node scripts/post-pkg.js && node scripts/pack-dist.js mac-arm64 && node scripts/pack-dist.js mac-x64",
+    "dist:linux": "npm run build:web && npm run build:server && npm run pkg:linux && node scripts/post-pkg.js && node scripts/pack-dist.js linux",
     "dist": "npm run dist:win",
     "dist:debug": "npm run build:server && npm run pkg:win && node scripts/post-pkg.js && scripts\\debug-exe.bat"
   },
@@ -28,8 +28,7 @@
     "assets": [
       "public/**/*",
       "assets/icon.ico",
-      "node_modules/better-sqlite3/build/Release/better_sqlite3.node",
-      "node_modules/@anthropic-ai/claude-agent-sdk/**/*"
+      "node_modules/better-sqlite3/build/Release/better_sqlite3.node"
     ]
   },
   "dependencies": {

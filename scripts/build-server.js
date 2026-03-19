@@ -13,8 +13,15 @@ const fs = require('fs');
 const ROOT = path.resolve(__dirname, '..');
 const OUT_DIR = path.join(ROOT, 'dist');
 
-// Ensure dist/ exists
-if (!fs.existsSync(OUT_DIR)) {
+// Clean dist/ (preserve data/ which holds the runtime database)
+if (fs.existsSync(OUT_DIR)) {
+  for (const entry of fs.readdirSync(OUT_DIR, { withFileTypes: true })) {
+    if (entry.name === 'data') continue; // keep runtime DB
+    const p = path.join(OUT_DIR, entry.name);
+    fs.rmSync(p, { recursive: true, force: true });
+  }
+  console.log('Cleaned dist/ (preserved data/)');
+} else {
   fs.mkdirSync(OUT_DIR, { recursive: true });
 }
 

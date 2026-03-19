@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
 
 jobs:
   build:
@@ -12,25 +13,29 @@ jobs:
       matrix:
         include:
           - os: windows-latest
+            platform: win
             target: node22-win-x64
             output: local-ai-proxy-windows.exe
-            pkg_cmd: npx @yao-pkg/pkg dist/server.bundle.cjs --target node22-win-x64 --output dist/local-ai-proxy-windows.exe
+            zip: local-ai-proxy-win.zip
 
           - os: macos-latest
+            platform: mac-arm64
             target: node22-mac-arm64
             output: local-ai-proxy-macos-arm64
-            pkg_cmd: npx @yao-pkg/pkg dist/server.bundle.cjs --target node22-mac-arm64 --output dist/local-ai-proxy-macos-arm64
+            zip: local-ai-proxy-mac-arm64.zip
 
-        #refer https://github.com/actions/runner-images/blob/main/images/macos/macos-26-Readme.md
-          - os: macos-26-intel
+          # macos-13 is the last Intel (x64) runner on GitHub Actions
+          - os: macos-13
+            platform: mac-x64
             target: node22-mac-x64
             output: local-ai-proxy-macos-x64
-            pkg_cmd: npx @yao-pkg/pkg dist/server.bundle.cjs --target node22-mac-x64 --output dist/local-ai-proxy-macos-x64
+            zip: local-ai-proxy-mac-x64.zip
 
           - os: ubuntu-latest
+            platform: linux
             target: node22-linux-x64
             output: local-ai-proxy-linux
-            pkg_cmd: npx @yao-pkg/pkg dist/server.bundle.cjs --target node22-linux-x64 --output dist/local-ai-proxy-linux
+            zip: local-ai-proxy-linux.zip
 
     runs-on: ${{ matrix.os }}
 
@@ -52,30 +57,75 @@ jobs:
       - name: Build frontend
         run: cd web && npm run build
 
-      - name: Build server bundle
-        run: node scripts/build-server.js
-
       - name: Build icon (Windows only)
         if: runner.os == 'Windows'
         run: node scripts/build-icon.js
 
-      - name: Package executable (single file with embedded assets)
-        run: ${{ matrix.pkg_cmd }}
+      - name: Build server bundle
+        run: node scripts/build-server.js
+
+      - name: Package executable
+        run: npx @yao-pkg/pkg dist/server.bundle.cjs --target ${{ matrix.target }} --output dist/${{ matrix.output }} --config pkg.json
+
+      - name: Copy companion files
+        run: node scripts/post-pkg.js
 
       - name: Embed icon into exe (Windows only)
         if: runner.os == 'Windows'
         run: node scripts/set-icon.js
 
+      - name: Smoke test — health check
+        shell: bash
+        run: |
+          cd dist
+
+          # Make executable on Unix
+          if [ "$RUNNER_OS" != "Windows" ]; then
+            chmod +x "${{ matrix.output }}"
+          fi
+
+          # Start app in background
+          ./${{ matrix.output }} &
+          APP_PID=$!
+
+          # Wait for health endpoint (max 30s)
+          echo "Waiting for server to start..."
+          for i in $(seq 1 30); do
+            RESPONSE=$(curl -sf http://localhost:3199/api/health 2>/dev/null) && {
+              echo "Response: $RESPONSE"
+              if echo "$RESPONSE" | grep -q '"ok"'; then
+                echo "Health check passed!"
+                kill $APP_PID 2>/dev/null || true
+                wait $APP_PID 2>/dev/null || true
+                exit 0
+              fi
+            }
+            sleep 1
+          done
+
+          echo "Health check failed after 30s"
+          # Dump logs for debugging
+          cat error.log 2>/dev/null || true
+          cat debug.log 2>/dev/null || true
+          kill $APP_PID 2>/dev/null || true
+          wait $APP_PID 2>/dev/null || true
+          exit 1
+
+      - name: Pack distribution zip
+        shell: bash
+        run: node scripts/pack-dist.js ${{ matrix.platform }}
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.output }}
-          path: dist/${{ matrix.output }}
+          name: ${{ matrix.zip }}
+          path: dist/${{ matrix.zip }}
           retention-days: 7
 
   release:
     needs: build
     runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write
 
@@ -91,8 +141,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            artifacts/local-ai-proxy-windows.exe/local-ai-proxy-windows.exe
-            artifacts/local-ai-proxy-macos-arm64/local-ai-proxy-macos-arm64
-            artifacts/local-ai-proxy-macos-x64/local-ai-proxy-macos-x64
-            artifacts/local-ai-proxy-linux/local-ai-proxy-linux
+            artifacts/local-ai-proxy-win.zip/local-ai-proxy-win.zip
+            artifacts/local-ai-proxy-mac-arm64.zip/local-ai-proxy-mac-arm64.zip
+            artifacts/local-ai-proxy-mac-x64.zip/local-ai-proxy-mac-x64.zip
+            artifacts/local-ai-proxy-linux.zip/local-ai-proxy-linux.zip
           generate_release_notes: true
