@@ -208,29 +208,51 @@ Uses **esbuild** to bundle into a single CJS file, then **@yao-pkg/pkg** to crea
 ### Build Pipeline
 
 ```bash
-npm run dist:win      # Full Windows build (icon → frontend → bundle → pkg → post-pkg → set-icon)
+npm run dist:win      # Full Windows build (icon → frontend → bundle → pkg → post-pkg → set-icon → pack)
 npm run dist:mac      # macOS builds (arm64 + x64)
 npm run dist:linux    # Linux build (x64)
 npm run dist:debug    # Quick debug build (bundle → pkg → post-pkg → launch with --debug)
 ```
 
+Build steps (in order):
+1. `build-icon.js` — SVG → ICO (Windows only, requires `sharp` + `png-to-ico`)
+2. `cd web && npm run build` — Vite builds frontend to `public/`
+3. `build-server.js` — esbuild bundles `server.js` → `dist/server.bundle.cjs` (also pre-bundles Claude Agent SDK ESM→CJS)
+4. `@yao-pkg/pkg` — packages bundle into standalone exe (target: `node22-{platform}`)
+5. `post-pkg.js` — copies companion files next to exe (native addons, public/, SDK, systray2, vendor/)
+6. `set-icon.js` — embeds ICO into Windows exe via `rcedit`
+7. `pack-dist.js` — creates platform-specific zip archive
+
 ### Key Files
 
 | File | Purpose |
 |---|---|
-| `scripts/build-server.js` | esbuild config — bundles server.js into `dist/server.bundle.cjs` |
-| `scripts/post-pkg.js` | Copies `better_sqlite3.node` and `public/` next to exe (pkg can't embed these) |
-| `scripts/build-icon.js` | Generates ICO from SVG for Windows exe |
-| `scripts/set-icon.js` | Applies icon to exe via rcedit |
+| `scripts/build-server.js` | esbuild config — bundles server.js into `dist/server.bundle.cjs`, cleans dist/ (preserves data/) |
+| `scripts/post-pkg.js` | Copies companion files: `better_sqlite3.node`, `public/`, `icon.ico`, `claude-agent-sdk.cjs`, `cli.js`, `vendor/`, `systray2` + deps (platform-specific traybin only) |
+| `scripts/build-icon.js` | Generates ICO from SVG for Windows exe (sharp + png-to-ico) |
+| `scripts/set-icon.js` | Applies icon to exe via rcedit (Windows only) |
+| `scripts/pack-dist.js` | Creates distribution zip (PowerShell on Windows, zip CLI on macOS/Linux) |
 | `scripts/debug-exe.bat` | Launches exe with `DEBUG=1 --debug` and keeps console open |
 | `lib/paths.js` | Path resolution — returns real filesystem paths in pkg mode, project-relative in dev |
+| `lib/runtime-extract.js` | Extracts `better_sqlite3.node`, `public/`, `icon.ico` from pkg snapshot on first run |
 
 ### pkg Constraints
 
-- **Native `.node` files** (better-sqlite3) must exist on real filesystem, not in pkg snapshot — `post-pkg.js` copies them next to the exe
+- **Native `.node` files** (better-sqlite3) must exist on real filesystem, not in pkg snapshot — `post-pkg.js` copies them next to the exe, `runtime-extract.js` also extracts from snapshot as fallback
 - **Static assets** (`public/`) must also be on real filesystem for Express static serving — `post-pkg.js` copies the directory
+- **ESM packages** (`@anthropic-ai/claude-agent-sdk`) — pkg can't handle ESM `import()`. Solved by pre-bundling to CJS in `build-server.js`, companion file `claude-agent-sdk.cjs` + `cli.js` next to exe
 - **Provider requires** must use static string literals (not variables) so esbuild/pkg can resolve them — `provider-registry.js` uses lazy closures: `() => require("../providers/xxx")`
-- **External packages** in esbuild: `better-sqlite3` (native), `@anthropic-ai/claude-agent-sdk` (ESM-only), dev deps
+- **External packages** in esbuild: `better-sqlite3` (native), `@anthropic-ai/claude-agent-sdk` (ESM-only), `systray2` (native + Go binary), dev deps
+- **systray2** — copies only current platform's tray binary (`tray_windows_release.exe` / `tray_darwin_release` / `tray_linux_release`)
+- **Node.js SEA not viable** — no VFS for `express.static()`, ESM `import()` fails for non-builtins. Revisit when `node:vfs` lands (PR #61478)
+
+### CI/CD (GitHub Actions)
+
+`.github/workflows/release.yml` — builds and releases for all platforms:
+- **Triggers:** push tag `v*` (creates release), `workflow_dispatch` (manual test builds)
+- **Matrix:** Windows (x64), macOS (arm64 + x64), Linux (x64)
+- **Smoke test:** starts packaged exe, polls `/api/health` for up to 30s
+- **Release:** downloads all platform zips, creates GitHub Release with auto-generated notes
 
 ### Debug Mode
 

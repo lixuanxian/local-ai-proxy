@@ -65,7 +65,7 @@ jobs:
         run: node scripts/build-server.js
 
       - name: Package executable
-        run: npx @yao-pkg/pkg dist/server.bundle.cjs --target ${{ matrix.target }} --output dist/${{ matrix.output }} --config pkg.json
+        run: npx @yao-pkg/pkg dist/server.bundle.cjs --target ${{ matrix.target }} --output dist/${{ matrix.output }}
 
       - name: Copy companion files
         run: node scripts/post-pkg.js

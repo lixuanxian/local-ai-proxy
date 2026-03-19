@@ -1,6 +1,6 @@
 {
   "name": "local-ai-proxy",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A unified API proxy for multiple local AI clients",
   "main": "server.js",
   "bin": "server.js",
@@ -13,10 +13,10 @@
     "build:icon": "node scripts/build-icon.js",
     "build:server": "node scripts/build-server.js",
     "setup": "npm install && cd web && npm install && npm run build",
-    "pkg:win": "npx @yao-pkg/pkg dist/server.bundle.cjs --target node22-win-x64   --output dist/local-ai-proxy-windows.exe --config pkg.json",
-    "pkg:mac-arm64": "npx @yao-pkg/pkg dist/server.bundle.cjs --target node22-mac-arm64 --output dist/local-ai-proxy-macos-arm64 --config pkg.json",
-    "pkg:mac-x64": "npx @yao-pkg/pkg dist/server.bundle.cjs --target node22-mac-x64   --output dist/local-ai-proxy-macos-x64 --config pkg.json",
-    "pkg:linux": "npx @yao-pkg/pkg dist/server.bundle.cjs --target node22-linux-x64 --output dist/local-ai-proxy-linux --config pkg.json",
+    "pkg:win": "npx @yao-pkg/pkg dist/server.bundle.cjs --target node22-win-x64   --output dist/local-ai-proxy-windows.exe",
+    "pkg:mac-arm64": "npx @yao-pkg/pkg dist/server.bundle.cjs --target node22-mac-arm64 --output dist/local-ai-proxy-macos-arm64",
+    "pkg:mac-x64": "npx @yao-pkg/pkg dist/server.bundle.cjs --target node22-mac-x64   --output dist/local-ai-proxy-macos-x64",
+    "pkg:linux": "npx @yao-pkg/pkg dist/server.bundle.cjs --target node22-linux-x64 --output dist/local-ai-proxy-linux",
     "dist:win": "node scripts/build-icon.js && npm run build:web && npm run build:server && npm run pkg:win && node scripts/post-pkg.js && node scripts/set-icon.js && node scripts/pack-dist.js win",
     "dist:mac": "npm run build:web && npm run build:server && npm run pkg:mac-arm64 && npm run pkg:mac-x64 && node scripts/post-pkg.js && node scripts/pack-dist.js mac-arm64 && node scripts/pack-dist.js mac-x64",
     "dist:linux": "npm run build:web && npm run build:server && npm run pkg:linux && node scripts/post-pkg.js && node scripts/pack-dist.js linux",
@@ -43,8 +43,9 @@
   "devDependencies": {
     "@yao-pkg/pkg": "^5.16.1",
     "esbuild": "^0.25.12",
+    "pe-library": "^2.0.1",
     "png-to-ico": "^2.1.8",
-    "rcedit": "^3.0.1",
+    "resedit": "^3.0.2",
     "sharp": "^0.33.5"
   }
 }

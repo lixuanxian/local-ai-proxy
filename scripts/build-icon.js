@@ -14,7 +14,8 @@ const ICO_PATH = path.join(__dirname, '../assets/icon.ico');
 
 async function main() {
   const svgBuffer = fs.readFileSync(SVG_PATH);
-  const sizes = [16, 24, 32, 48, 64, 128, 256];
+  // Keep sizes small — resedit + pkg requires noGrow (icon must fit in existing resource section)
+  const sizes = [16, 32, 48];
 
   console.log(`Building icon from ${SVG_PATH}...`);
 
