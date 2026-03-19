@@ -18,7 +18,15 @@ if (fs.existsSync(OUT_DIR)) {
   for (const entry of fs.readdirSync(OUT_DIR, { withFileTypes: true })) {
     if (entry.name === 'data') continue; // keep runtime DB
     const p = path.join(OUT_DIR, entry.name);
-    fs.rmSync(p, { recursive: true, force: true });
+    try {
+      fs.rmSync(p, { recursive: true, force: true });
+    } catch (e) {
+      if (e.code === 'EBUSY' || e.code === 'EPERM') {
+        console.warn(`  Warning: could not remove ${entry.name} (${e.code}), skipping`);
+      } else {
+        throw e;
+      }
+    }
   }
   console.log('Cleaned dist/ (preserved data/)');
 } else {
