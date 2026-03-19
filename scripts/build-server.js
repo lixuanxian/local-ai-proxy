@@ -90,9 +90,6 @@ async function main() {
 
   const size = (fs.statSync(path.join(OUT_DIR, 'server.bundle.cjs')).size / 1024 / 1024).toFixed(1);
   console.log(`\nServer bundle built: dist/server.bundle.cjs (${size} MB)`);
-  console.log('\nNext steps:');
-  console.log('  npm run pkg:win    — package into Windows exe');
-  console.log('  scripts/debug-exe.bat  — run the exe in debug mode');
 }
 
 main().catch(err => {

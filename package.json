@@ -6,22 +6,20 @@
   "bin": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "concurrently  \"npm run dev:server\" \"npm run dev:web\"",
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:web\"",
     "dev:server": "node --watch server.js",
     "dev:web": "cd web && npm run dev",
     "build:web": "cd web && npm run build",
     "build:icon": "node scripts/build-icon.js",
     "build:server": "node scripts/build-server.js",
     "setup": "npm install && cd web && npm install && npm run build",
-    "pkg:win": "npx @yao-pkg/pkg dist/server.bundle.cjs --target node22-win-x64   --output dist/local-ai-proxy-windows.exe",
-    "pkg:mac-arm64": "npx @yao-pkg/pkg dist/server.bundle.cjs --target node22-mac-arm64 --output dist/local-ai-proxy-macos-arm64",
-    "pkg:mac-x64": "npx @yao-pkg/pkg dist/server.bundle.cjs --target node22-mac-x64   --output dist/local-ai-proxy-macos-x64",
-    "pkg:linux": "npx @yao-pkg/pkg dist/server.bundle.cjs --target node22-linux-x64 --output dist/local-ai-proxy-linux",
-    "dist:win": "node scripts/build-icon.js && npm run build:web && npm run build:server && npm run pkg:win && node scripts/post-pkg.js && node scripts/set-icon.js && node scripts/pack-dist.js win",
-    "dist:mac": "npm run build:web && npm run build:server && npm run pkg:mac-arm64 && npm run pkg:mac-x64 && node scripts/post-pkg.js && node scripts/pack-dist.js mac-arm64 && node scripts/pack-dist.js mac-x64",
-    "dist:linux": "npm run build:web && npm run build:server && npm run pkg:linux && node scripts/post-pkg.js && node scripts/pack-dist.js linux",
-    "dist": "npm run dist:win",
-    "dist:debug": "npm run build:server && npm run pkg:win && node scripts/post-pkg.js && scripts\\debug-exe.bat"
+    "dist": "node scripts/dist.js win",
+    "dist:win": "node scripts/dist.js win",
+    "dist:mac": "node scripts/dist.js mac",
+    "dist:mac-arm64": "node scripts/dist.js mac-arm64",
+    "dist:mac-x64": "node scripts/dist.js mac-x64",
+    "dist:linux": "node scripts/dist.js linux",
+    "dist:debug": "node scripts/dist.js win --skip-web --debug"
   },
   "pkg": {
     "outputPath": "dist",
@@ -42,6 +40,7 @@
   },
   "devDependencies": {
     "@yao-pkg/pkg": "^5.16.1",
+    "concurrently": "^9.2.1",
     "esbuild": "^0.25.12",
     "pe-library": "^2.0.1",
     "png-to-ico": "^2.1.8",
