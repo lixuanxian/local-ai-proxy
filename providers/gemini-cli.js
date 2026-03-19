@@ -17,7 +17,8 @@ module.exports = new BaseCLIProvider({
     // Use json format for non-streaming — includes session_id in output.
     // Prompt is passed via stdin; see base-cli.js { args, stdin } return format.
     const args = ["-o", "json", "-y"];
-    if (model) args.push("-m", model);
+    // ignore the model 
+    // if (model) args.push("-m", model);
     if (sessionOpts?.isResume && sessionOpts?.sessionId) {
       // Resume a specific session by UUID
       args.push("--resume", sessionOpts.sessionId);
@@ -31,7 +32,8 @@ module.exports = new BaseCLIProvider({
     // Use stream-json for streaming — delivers incremental chunks.
     // Prompt is passed via stdin; same reason as buildArgs above.
     const args = ["-o", "stream-json", "-y"];
-    if (model) args.push("-m", model);
+    // ignore the model
+    // if (model) args.push("-m", model);
     if (sessionOpts?.isResume && sessionOpts?.sessionId) {
       args.push("--resume", sessionOpts.sessionId);
     } else if (sessionOpts?.isResume) {

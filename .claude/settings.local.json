@@ -10,7 +10,8 @@
       "Bash(curl *)",
       "Bash(timeout *)",
       "Bash(PORT *)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(taskkill /F /IM local-ai-proxy-windows.exe)"
     ]
   }
 }

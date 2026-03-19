@@ -1,3 +1,40 @@
+// --- Console management on Windows (pkg mode) ---
+// Keep CONSOLE subsystem so child processes inherit the console instead of
+// creating new visible windows. Hide the terminal window at startup.
+// Also tee stdout/stderr to a log file so "Show Console" (log viewer) works.
+if (process.platform === 'win32' && typeof process.pkg !== 'undefined') {
+  const _fs = require('fs');
+  const _path = require('path');
+  const { captureTerminalWindow, hideTerminalWindow } = require('./lib/tray');
+  const _isDebug = process.argv.includes('--debug') || process.env.DEBUG === '1';
+
+  // Capture the console window handle NOW while it is still the foreground
+  // window — before any browser or GUI steals focus.
+  captureTerminalWindow();
+
+  // Tee stdout/stderr to debug.log so the log viewer has content to tail
+  try {
+    const _logPath = _path.join(_path.dirname(process.execPath), 'debug.log');
+    const _logStream = _fs.createWriteStream(_logPath, { flags: 'a' });
+    const _origStdoutWrite = process.stdout.write.bind(process.stdout);
+    const _origStderrWrite = process.stderr.write.bind(process.stderr);
+    process.stdout.write = (chunk, ...args) => {
+      _logStream.write(chunk);
+      return _origStdoutWrite(chunk, ...args);
+    };
+    process.stderr.write = (chunk, ...args) => {
+      _logStream.write(chunk);
+      return _origStderrWrite(chunk, ...args);
+    };
+  } catch { /* ignore — log viewer just won't have content */ }
+
+  // Hide terminal window after 2s delay so startup messages can be read.
+  // Debug mode keeps the console visible indefinitely.
+  if (!_isDebug) {
+    setTimeout(() => hideTerminalWindow(), 2000);
+  }
+}
+
 const express = require("express");
 const path = require("path");
 const fs = require("fs");

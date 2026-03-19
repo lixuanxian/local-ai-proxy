@@ -67,13 +67,8 @@ async function main() {
   });
   vi.outputToResourceEntries(res.entries);
 
-  // Change subsystem from CONSOLE (3) to WINDOWS (2) so double-clicking
-  // the exe doesn't open a console window
-  const oh = exe.newHeader.optionalHeader;
-  if (oh.subsystem === 3) {
-    oh.subsystem = 2; // IMAGE_SUBSYSTEM_WINDOWS_GUI
-    console.log('Subsystem changed: CONSOLE → WINDOWS_GUI (no console window).');
-  }
+  // Keep CONSOLE subsystem (3) so child processes inherit the parent's console.
+  // The console is hidden at startup in server.js instead, preventing window flash.
 
   // noGrow: prevent expanding resource section (would break pkg's embedded VFS)
   res.outputResource(exe, { noGrow: true });
