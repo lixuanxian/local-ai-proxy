@@ -24,8 +24,8 @@ jobs:
             output: local-ai-proxy-macos-arm64
             zip: local-ai-proxy-mac-arm64.zip
 
-          # macos-13 is the last Intel (x64) runner on GitHub Actions
-          - os: macos-13
+        #refer https://github.com/actions/runner-images/blob/main/images/macos/macos-26-Readme.md
+          - os: macos-26-intel
             platform: mac-x64
             target: node22-mac-x64
             output: local-ai-proxy-macos-x64
